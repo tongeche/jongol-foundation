@@ -6,23 +6,34 @@ import { signOut } from "../../lib/dataService.js";
 const adminRoles = ["admin", "superadmin"];
 const baseMenuItems = [
   { key: "overview", label: "Dashboard", icon: "home" },
-  { key: "contributions", label: "My Contributions", icon: "wallet" },
-  { key: "payouts", label: "Payout Schedule", icon: "calendar" },
-  { key: "welfare", label: "Welfare Account", icon: "heart" },
+  {
+    key: "welfare",
+    label: "Welfare Account",
+    icon: "heart",
+    subItems: [
+      { key: "payouts", label: "Payout Schedule", icon: "calendar" },
+      { key: "contributions", label: "My Contributions", icon: "wallet" },
+      { key: "documents", label: "Documents", icon: "folder" },
+    ],
+  },
   {
     key: "projects",
     label: "IGA Projects",
     icon: "briefcase",
-    subItems: [{ key: "projects-jpp", label: "JPP Project", icon: "arrow-right" }],
+    subItems: [
+      { key: "projects-jpp", label: "JPP Project", icon: "arrow-right" },
+      { key: "projects-jgf", label: "JGF Project", icon: "arrow-right" },
+    ],
   },
+  { key: "expenses", label: "Expense", icon: "receipt" },
   { key: "news", label: "News & Updates", icon: "newspaper" },
-  { key: "documents", label: "Documents", icon: "folder" },
   { key: "meetings", label: "Meetings", icon: "users" },
   { key: "profile", label: "My Profile", icon: "user" },
 ];
 
 export default function DashboardLayout({ activePage, setActivePage, children, user }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [openSections, setOpenSections] = useState(() => new Set());
   const navigate = useNavigate();
   const menuItems = adminRoles.includes(user?.role)
     ? [...baseMenuItems, { key: "admin", label: "Admin Panel", icon: "users" }]
@@ -41,6 +52,18 @@ export default function DashboardLayout({ activePage, setActivePage, children, u
       // Force redirect even on error
       navigate("/login");
     }
+  };
+
+  const toggleSection = (key) => {
+    setOpenSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
   };
 
   return (
@@ -62,44 +85,62 @@ export default function DashboardLayout({ activePage, setActivePage, children, u
         </div>
         <nav className="dashboard-nav">
           <ul>
-            {menuItems.map((item) => (
-              <li key={item.key}>
-                <button
-                  className={`dashboard-nav-item${
-                    activePage === item.key || item.subItems?.some((sub) => sub.key === activePage)
-                      ? " active"
-                      : ""
-                  }`}
-                  onClick={() => {
-                    setActivePage(item.key);
-                    setSidebarOpen(false);
-                  }}
-                >
-                  <Icon name={item.icon} size={20} />
-                  <span>{item.label}</span>
-                </button>
-                {item.subItems && (
-                  <ul className="dashboard-nav-sublist">
-                    {item.subItems.map((subItem) => (
-                      <li key={subItem.key}>
-                        <button
-                          className={`dashboard-nav-subitem${
-                            activePage === subItem.key ? " active" : ""
-                          }`}
-                          onClick={() => {
-                            setActivePage(subItem.key);
-                            setSidebarOpen(false);
-                          }}
-                        >
-                          <Icon name={subItem.icon} size={14} />
-                          <span>{subItem.label}</span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </li>
-            ))}
+            {menuItems.map((item) => {
+              const hasSubItems = Boolean(item.subItems?.length);
+              const isActive =
+                activePage === item.key || item.subItems?.some((sub) => sub.key === activePage);
+              const isExpanded = hasSubItems && (openSections.has(item.key) || isActive);
+
+              return (
+                <li key={item.key}>
+                  <button
+                    className={`dashboard-nav-item${isActive ? " active" : ""}${
+                      hasSubItems ? " has-children" : ""
+                    }`}
+                    onClick={() => {
+                      if (hasSubItems) {
+                        toggleSection(item.key);
+                      }
+                      setActivePage(item.key);
+                      setSidebarOpen(false);
+                    }}
+                  >
+                    <span className="dashboard-nav-item-main">
+                      <Icon name={item.icon} size={20} />
+                      <span>{item.label}</span>
+                    </span>
+                    {hasSubItems && (
+                      <span
+                        className={`dashboard-nav-caret${isExpanded ? " is-open" : ""}`}
+                        aria-hidden="true"
+                      >
+                        <Icon name="chevron" size={16} />
+                      </span>
+                    )}
+                  </button>
+                  {hasSubItems && isExpanded && (
+                    <ul className="dashboard-nav-sublist">
+                      {item.subItems.map((subItem) => (
+                        <li key={subItem.key}>
+                          <button
+                            className={`dashboard-nav-subitem${
+                              activePage === subItem.key ? " active" : ""
+                            }`}
+                            onClick={() => {
+                              setActivePage(subItem.key);
+                              setSidebarOpen(false);
+                            }}
+                          >
+                            <Icon name={subItem.icon} size={14} />
+                            <span>{subItem.label}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </nav>
         <div className="dashboard-sidebar-footer">

@@ -2,7 +2,12 @@ import { useState, useEffect } from "react";
 import { getProjectsWithMembership, joinProject, leaveProject } from "../../lib/dataService.js";
 import { Icon } from "../icons.jsx";
 
-export default function ProjectsPage({ user }) {
+const projectPageMap = {
+  JPP: "projects-jpp",
+  JGF: "projects-jgf",
+};
+
+export default function ProjectsPage({ user, setActivePage }) {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [joiningId, setJoiningId] = useState(null);
@@ -73,6 +78,14 @@ export default function ProjectsPage({ user }) {
     }
   };
 
+  const handleManageProject = (project) => {
+    const code = project?.code ? String(project.code).trim().toUpperCase() : "";
+    const target = projectPageMap[code];
+    if (target && setActivePage) {
+      setActivePage(target);
+    }
+  };
+
   if (loading) {
     return (
       <div className="projects-page-modern">
@@ -113,95 +126,119 @@ export default function ProjectsPage({ user }) {
         </div>
       ) : (
         <div className="projects-list-modern">
-          {projects.map((project) => (
-            <div className="project-card-modern" key={project.id}>
-              <div className="project-card-main">
-                <div className="project-icon">
-                  <Icon name="star" size={24} />
-                </div>
-                <div className="project-info">
-                  <h3>{project.name}</h3>
-                  <p className="project-desc">{project.description}</p>
-                </div>
-                <div className="project-progress">
-                  <div className="progress-label">
-                    <span 
-                      className="status-dot" 
-                      style={{ background: getStatusColor(project.status) }}
-                    ></span>
-                    <span>{project.status || "Active"}</span>
-                  </div>
-                  <div className="progress-bar-wrapper">
-                    <div 
-                      className="progress-bar-fill" 
-                      style={{ 
-                        width: project.status?.toLowerCase() === 'active' ? '50%' : 
-                               project.status?.toLowerCase() === 'completed' ? '100%' : '25%' 
-                      }}
-                    ></div>
-                  </div>
-                </div>
-                <div className="project-actions-col">
-                  <a 
-                    href={`/projects/${project.code || project.id}`}
-                    className="btn-view-project"
-                    title="View project details"
-                  >
-                    <Icon name="arrow-right" size={18} />
-                  </a>
-                </div>
-              </div>
+          {projects.map((project) => {
+            const role = project.membership?.role || "";
+            const isProjectManager = !!(
+              user && (
+                user.role === "admin" ||
+                user.role === "superadmin" ||
+                project.project_leader === user.id ||
+                ["project manager", "project_manager", "admin"].includes(role?.toLowerCase())
+              )
+            );
 
-              <div className="project-card-details">
-                <div className="project-detail-row">
-                  <div className="detail-item">
-                    <Icon name="calendar" size={14} />
-                    <span>Started: {formatDate(project.start_date)}</span>
+            return (
+              <div className="project-card-modern" key={project.id}>
+                <div className="project-card-main">
+                  <div className="project-icon">
+                    <Icon name="star" size={24} />
                   </div>
-                  <div className="detail-item">
-                    <Icon name="member" size={14} />
-                    <span>{project.member_count} members</span>
+                  <div className="project-info">
+                    <h3>{project.name}</h3>
+                    <p className="project-desc">{project.description}</p>
+                  </div>
+                  <div className="project-progress">
+                    <div className="progress-label">
+                      <span 
+                        className="status-dot" 
+                        style={{ background: getStatusColor(project.status) }}
+                      ></span>
+                      <span>{project.status || "Active"}</span>
+                    </div>
+                    <div className="progress-bar-wrapper">
+                      <div 
+                        className="progress-bar-fill" 
+                        style={{ 
+                          width: project.status?.toLowerCase() === 'active' ? '50%' : 
+                                 project.status?.toLowerCase() === 'completed' ? '100%' : '25%' 
+                        }}
+                      ></div>
+                    </div>
+                  </div>
+                  <div className="project-actions-col">
+                  {isProjectManager && (
+                      <button
+                        type="button"
+                        className="btn-manage-project"
+                        title="Manage project"
+                        aria-label={`Manage ${project.name}`}
+                        onClick={() => handleManageProject(project)}
+                        disabled={!projectPageMap[String(project.code || "").trim().toUpperCase()]}
+                      >
+                        <Icon name="briefcase" size={16} />
+                      </button>
+                  )}
+                    <a 
+                      href={`/projects/${project.code || project.id}`}
+                      className="btn-view-project"
+                      title="View project details"
+                    >
+                      <Icon name="arrow-right" size={18} />
+                    </a>
                   </div>
                 </div>
 
-                <div className="project-membership">
-                  {project.membership ? (
-                    <div className="membership-status">
-                      <div className="member-badge">
-                        <Icon name="check-circle" size={16} />
-                        <span>Member since {formatDate(project.membership.term_start)}</span>
-                        {project.membership.role && project.membership.role !== "Member" && (
-                          <span className="role-tag">{project.membership.role}</span>
-                        )}
+                <div className="project-card-details">
+                  <div className="project-detail-row">
+                    <div className="detail-item">
+                      <Icon name="calendar" size={14} />
+                      <span>Started: {formatDate(project.start_date)}</span>
+                    </div>
+                    <div className="detail-item">
+                      <Icon name="member" size={14} />
+                      <span>{project.member_count} members</span>
+                    </div>
+                  </div>
+
+                  <div className="project-membership">
+                    {project.membership ? (
+                      <div className="membership-status">
+                        <div className="member-badge">
+                          <Icon name="check-circle" size={16} />
+                          <span>Member since {formatDate(project.membership.term_start)}</span>
+                          {project.membership.role && project.membership.role !== "Member" && (
+                            <span className="role-tag">{project.membership.role}</span>
+                          )}
+                        </div>
+                        <button 
+                          className="btn-leave"
+                          onClick={() => handleLeave(project.id)}
+                          disabled={joiningId === project.id}
+                        >
+                          {joiningId === project.id ? "..." : "Leave"}
+                        </button>
                       </div>
+                    ) : (
                       <button 
-                        className="btn-leave"
-                        onClick={() => handleLeave(project.id)}
+                        className="btn-join"
+                        onClick={() => handleJoin(project.id)}
                         disabled={joiningId === project.id}
                       >
-                        {joiningId === project.id ? "..." : "Leave"}
+                        {joiningId === project.id ? (
+                          "Joining..."
+                        ) : (
+                          <>
+                            <Icon name="plus" size={16} />
+                            Join Project
+                          </>
+                        )}
                       </button>
-                    </div>
-                  ) : (
-                    <button 
-                      className="btn-join"
-                      onClick={() => handleJoin(project.id)}
-                      disabled={joiningId === project.id}
-                    >
-                      {joiningId === project.id ? (
-                        "Joining..."
-                      ) : (
-                        <>
-                          <Icon name="plus" size={16} />
-                          Join Project
-                        </>
-                      )}
-                    </button>
-                  )}
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

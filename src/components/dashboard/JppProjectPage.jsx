@@ -3,20 +3,20 @@ import { Icon } from "../icons.jsx";
 import {
   createJppBatch,
   createJppDailyLog,
-  createJppExpense,
   createJppWeeklyGrowth,
   deleteJppBatch,
   deleteJppDailyLog,
-  deleteJppExpense,
   deleteJppWeeklyGrowth,
   getJppBatchKpis,
   getJppBatches,
   getJppDailyLogs,
   getJppExpenses,
   getJppWeeklyGrowth,
+  createProjectExpenseItem,
+  getProjectExpenseItems,
+  updateProjectExpenseItem,
   updateJppBatch,
   updateJppDailyLog,
-  updateJppExpense,
   updateJppWeeklyGrowth,
 } from "../../lib/dataService.js";
 
@@ -30,20 +30,8 @@ const deathCauseOptions = [
   { value: "S", label: "Stress" },
 ];
 
-const expenseCategories = [
-  "Feed",
-  "Meds",
-  "Bedding",
-  "Labour",
-  "Repairs",
-  "Transport",
-  "Utilities",
-  "Other",
-];
-
 const dailyChecklistItems = ["Water", "Feed AM", "Feed PM", "Temp OK"];
 const dailyRows = Array.from({ length: 7 }, (_, index) => index + 1);
-const expenseRows = Array.from({ length: 8 }, (_, index) => index + 1);
 const weekDayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const downloadDocs = [
   { key: "weekly", label: "Offline Weekly Sheet" },
@@ -53,7 +41,7 @@ const downloadDocs = [
 
 export default function JppProjectPage({ user }) {
   const today = new Date().toISOString().slice(0, 10);
-  const canManage = ["admin", "superadmin", "project_manager"].includes(user?.role);
+  const canManage = ["admin", "superadmin", "project_manager", "member"].includes(user?.role);
 
   const initialBatchForm = {
     batch_code: "",
@@ -108,22 +96,16 @@ export default function JppProjectPage({ user }) {
     notes: "",
   };
 
-  const initialExpenseForm = {
-    batch_id: "",
-    expense_date: today,
-    category: "Feed",
-    amount: "",
-    vendor: "",
-    description: "",
-    receipt: false,
-  };
-
   const [activeTab, setActiveTab] = useState("overview");
   const [batches, setBatches] = useState([]);
   const [kpis, setKpis] = useState([]);
   const [dailyLogs, setDailyLogs] = useState([]);
   const [weeklyGrowth, setWeeklyGrowth] = useState([]);
   const [expenses, setExpenses] = useState([]);
+  const [expenseItems, setExpenseItems] = useState([]);
+  const [expenseItemEdits, setExpenseItemEdits] = useState({});
+  const [savingExpenseItems, setSavingExpenseItems] = useState(false);
+  const [addingExpenseItem, setAddingExpenseItem] = useState(false);
   const [moduleCounts, setModuleCounts] = useState({
     dailyLogs: 0,
     weeklyGrowth: 0,
@@ -134,12 +116,10 @@ export default function JppProjectPage({ user }) {
   const [batchForm, setBatchForm] = useState(initialBatchForm);
   const [dailyForm, setDailyForm] = useState(initialDailyForm);
   const [weeklyForm, setWeeklyForm] = useState(initialWeeklyForm);
-  const [expenseForm, setExpenseForm] = useState(initialExpenseForm);
 
   const [editingBatchId, setEditingBatchId] = useState(null);
   const [editingDailyId, setEditingDailyId] = useState(null);
   const [editingWeeklyId, setEditingWeeklyId] = useState(null);
-  const [editingExpenseId, setEditingExpenseId] = useState(null);
   const [selectedBatchId, setSelectedBatchId] = useState("");
   const [printSheet, setPrintSheet] = useState("");
   const [selectedDownloadDoc, setSelectedDownloadDoc] = useState("");
@@ -174,15 +154,18 @@ export default function JppProjectPage({ user }) {
         getJppDailyLogs(),
         getJppWeeklyGrowth(),
         getJppExpenses(),
+        getProjectExpenseItems("JPP"),
       ]);
 
-      const [batchRes, kpiRes, dailyRes, weeklyRes, expenseRes] = results;
+      const [batchRes, kpiRes, dailyRes, weeklyRes, expenseRes, expenseItemsRes] = results;
 
       const safeBatches = batchRes.status === "fulfilled" ? batchRes.value || [] : [];
       const safeKpis = kpiRes.status === "fulfilled" ? kpiRes.value || [] : [];
       const safeDaily = dailyRes.status === "fulfilled" ? dailyRes.value || [] : [];
       const safeWeekly = weeklyRes.status === "fulfilled" ? weeklyRes.value || [] : [];
       const safeExpenses = expenseRes.status === "fulfilled" ? expenseRes.value || [] : [];
+      const safeExpenseItems =
+        expenseItemsRes.status === "fulfilled" ? expenseItemsRes.value || [] : [];
 
       const errors = results
         .filter((res) => res.status === "rejected")
@@ -193,6 +176,7 @@ export default function JppProjectPage({ user }) {
       setDailyLogs(safeDaily);
       setWeeklyGrowth(safeWeekly);
       setExpenses(safeExpenses);
+      setExpenseItems(safeExpenseItems);
       setModuleCounts({
         dailyLogs: safeDaily.length,
         weeklyGrowth: safeWeekly.length,
@@ -250,6 +234,40 @@ export default function JppProjectPage({ user }) {
     }
     return batchLookup.get(selectedBatchId) || null;
   }, [batchLookup, selectedBatchId]);
+
+  const expenseSheetItems = useMemo(() => {
+    return expenseItems;
+  }, [expenseItems]);
+
+  const expenseSheetRowCount = useMemo(() => {
+    return Math.max(8, expenseSheetItems.length);
+  }, [expenseSheetItems.length]);
+
+  const expenseSheetRows = useMemo(() => {
+    return Array.from({ length: expenseSheetRowCount }, (_, index) => index);
+  }, [expenseSheetRowCount]);
+
+  const hasExpenseItemChanges = useMemo(() => {
+    return expenseSheetItems.some((item) => {
+      const nextLabel = (expenseItemEdits[item.id] ?? item.label ?? "").trim();
+      const currentLabel = (item.label ?? "").trim();
+      return nextLabel !== currentLabel;
+    });
+  }, [expenseItemEdits, expenseSheetItems]);
+
+  useEffect(() => {
+    setExpenseItemEdits((prev) => {
+      const next = { ...prev };
+      let hasChange = false;
+      expenseItems.forEach((item) => {
+        if (!Object.prototype.hasOwnProperty.call(next, item.id)) {
+          next[item.id] = item.label || "";
+          hasChange = true;
+        }
+      });
+      return hasChange ? next : prev;
+    });
+  }, [expenseItems]);
 
   const getBatchLabel = (batchId) => {
     if (!batchId) return "Unassigned";
@@ -361,12 +379,6 @@ export default function JppProjectPage({ user }) {
     resetMessages();
   };
 
-  const handleExpenseChange = (event) => {
-    const { name, value, type, checked } = event.target;
-    setExpenseForm((prev) => ({ ...prev, [name]: type === "checkbox" ? checked : value }));
-    resetMessages();
-  };
-
   const handleBatchSelect = (event) => {
     setSelectedBatchId(event.target.value);
   };
@@ -374,6 +386,112 @@ export default function JppProjectPage({ user }) {
   const handleDownloadDocSelect = (event) => {
     setSelectedDownloadDoc(event.target.value);
     setShowDownloadPreview(false);
+  };
+
+  const handleExpenseItemChange = (itemId, value) => {
+    setExpenseItemEdits((prev) => ({ ...prev, [itemId]: value }));
+  };
+
+  const handleExpenseItemsSave = async () => {
+    if (!hasExpenseItemChanges || savingExpenseItems) {
+      return;
+    }
+
+    const changes = expenseSheetItems
+      .map((item) => ({
+        id: item.id,
+        nextLabel: (expenseItemEdits[item.id] ?? item.label ?? "").trim(),
+        currentLabel: (item.label ?? "").trim(),
+      }))
+      .filter((change) => change.nextLabel !== change.currentLabel);
+
+    if (changes.some((change) => !change.nextLabel)) {
+      setErrorMessage("Expense item cannot be empty.");
+      return;
+    }
+
+    try {
+      resetMessages();
+      setSavingExpenseItems(true);
+      const results = await Promise.allSettled(
+        changes.map((change) => updateProjectExpenseItem(change.id, { label: change.nextLabel }))
+      );
+
+      const updatedMap = new Map();
+      const errors = [];
+      results.forEach((result, index) => {
+        const change = changes[index];
+        if (result.status === "fulfilled") {
+          updatedMap.set(change.id, result.value);
+        } else {
+          errors.push(result.reason?.message || "Failed to update an expense item.");
+        }
+      });
+
+      if (updatedMap.size > 0) {
+        setExpenseItems((prev) =>
+          prev.map((item) => {
+            const updated = updatedMap.get(item.id);
+            return updated ? { ...item, label: updated.label || item.label } : item;
+          })
+        );
+        setExpenseItemEdits((prev) => {
+          const next = { ...prev };
+          updatedMap.forEach((updated, id) => {
+            next[id] = updated.label || next[id];
+          });
+          return next;
+        });
+      }
+
+      if (errors.length > 0) {
+        setErrorMessage(errors.join(" "));
+      } else {
+        setStatusMessage("Expense items updated.");
+      }
+    } catch (error) {
+      console.error("Error updating expense items:", error);
+      setErrorMessage("Failed to update expense items.");
+    } finally {
+      setSavingExpenseItems(false);
+    }
+  };
+
+  const handleExpenseItemAdd = async () => {
+    if (addingExpenseItem) {
+      return;
+    }
+
+    try {
+      resetMessages();
+      setAddingExpenseItem(true);
+      const existingLabels = new Set(
+        expenseItems
+          .map((item) => item.label)
+          .filter(Boolean)
+          .map((label) => label.trim().toLowerCase())
+      );
+      let counter = expenseItems.length + 1;
+      let nextLabel = `New item ${counter}`;
+      while (existingLabels.has(nextLabel.toLowerCase())) {
+        counter += 1;
+        nextLabel = `New item ${counter}`;
+      }
+
+      const created = await createProjectExpenseItem("JPP", {
+        label: nextLabel,
+        display_order: expenseItems.length + 1,
+      });
+
+      setExpenseItems((prev) => [...prev, created]);
+      setExpenseItemEdits((prev) => ({ ...prev, [created.id]: created.label || nextLabel }));
+      setStatusMessage("Expense item added.");
+    } catch (error) {
+      console.error("Error adding expense item:", error);
+      setErrorMessage("Failed to add expense item.");
+    } finally {
+      setAddingExpenseItem(false);
+    }
   };
 
   const handleDownloadView = () => {
@@ -540,52 +658,6 @@ export default function JppProjectPage({ user }) {
     }
   };
 
-  const handleExpenseSubmit = async (event) => {
-    event.preventDefault();
-    resetMessages();
-
-    if (!expenseForm.expense_date) {
-      setErrorMessage("Expense date is required.");
-      return;
-    }
-
-    if (!expenseForm.category) {
-      setErrorMessage("Expense category is required.");
-      return;
-    }
-
-    const amount = parseOptionalNumber(expenseForm.amount);
-    if (amount === null) {
-      setErrorMessage("Expense amount is required.");
-      return;
-    }
-
-    const payload = {
-      batch_id: expenseForm.batch_id || null,
-      expense_date: expenseForm.expense_date,
-      category: expenseForm.category,
-      amount,
-      vendor: normalizeOptional(expenseForm.vendor),
-      description: normalizeOptional(expenseForm.description),
-      receipt: expenseForm.receipt,
-    };
-
-    try {
-      if (editingExpenseId) {
-        await updateJppExpense(editingExpenseId, payload);
-        setStatusMessage("Expense updated.");
-      } else {
-        await createJppExpense(payload);
-        setStatusMessage("Expense logged.");
-      }
-      setExpenseForm(initialExpenseForm);
-      setEditingExpenseId(null);
-      await loadJppData(false);
-    } catch (error) {
-      setErrorMessage(error.message || "Failed to save expense.");
-    }
-  };
-
   const handleBatchEdit = (batch) => {
     setBatchForm({
       ...initialBatchForm,
@@ -651,22 +723,6 @@ export default function JppProjectPage({ user }) {
     resetMessages();
   };
 
-  const handleExpenseEdit = (expense) => {
-    setExpenseForm({
-      ...initialExpenseForm,
-      ...expense,
-      batch_id: expense.batch_id ? String(expense.batch_id) : "",
-      expense_date: expense.expense_date || today,
-      amount: expense.amount ?? "",
-      vendor: expense.vendor ?? "",
-      description: expense.description ?? "",
-      receipt: Boolean(expense.receipt),
-    });
-    setEditingExpenseId(expense.id);
-    setActiveTab("expenses");
-    resetMessages();
-  };
-
   const handleBatchDelete = async (batchId) => {
     if (!confirm("Delete this batch? This will remove related logs.")) {
       return;
@@ -709,20 +765,6 @@ export default function JppProjectPage({ user }) {
     }
   };
 
-  const handleExpenseDelete = async (expenseId) => {
-    if (!confirm("Delete this expense entry?")) {
-      return;
-    }
-    resetMessages();
-    try {
-      await deleteJppExpense(expenseId);
-      setStatusMessage("Expense deleted.");
-      await loadJppData(false);
-    } catch (error) {
-      setErrorMessage(error.message || "Failed to delete expense.");
-    }
-  };
-
   const handleBatchCancel = () => {
     setBatchForm(initialBatchForm);
     setEditingBatchId(null);
@@ -736,11 +778,6 @@ export default function JppProjectPage({ user }) {
   const handleWeeklyCancel = () => {
     setWeeklyForm(initialWeeklyForm);
     setEditingWeeklyId(null);
-  };
-
-  const handleExpenseCancel = () => {
-    setExpenseForm(initialExpenseForm);
-    setEditingExpenseId(null);
   };
 
   if (loading) {
@@ -759,7 +796,7 @@ export default function JppProjectPage({ user }) {
       <div className="page-header">
         <div className="page-header-text">
           <h1>JPP Poultry Project</h1>
-          <p>Track batches, daily logs, growth, and expenses.</p>
+          <p>Track batches, daily logs, and growth.</p>
         </div>
         <div className="jpp-header-badges">
           <span className="jpp-badge">
@@ -811,14 +848,6 @@ export default function JppProjectPage({ user }) {
         >
           <Icon name="calendar" size={16} />
           Weekly Growth
-        </button>
-        <button
-          className={`jpp-tab ${activeTab === "expenses" ? "active" : ""}`}
-          onClick={() => setActiveTab("expenses")}
-          type="button"
-        >
-          <Icon name="receipt" size={16} />
-          Expenses
         </button>
         {canManage && (
           <button
@@ -1263,6 +1292,26 @@ export default function JppProjectPage({ user }) {
                     </div>
 
                     <div className="jpp-sheet-section">
+                      <div className="jpp-sheet-actions jpp-no-print">
+                        <button
+                          className="btn-secondary"
+                          type="button"
+                          onClick={handleExpenseItemAdd}
+                          disabled={addingExpenseItem}
+                        >
+                          <Icon name="plus" size={16} />
+                          {addingExpenseItem ? "Adding..." : "Add Item"}
+                        </button>
+                        <button
+                          className="btn-secondary"
+                          type="button"
+                          onClick={handleExpenseItemsSave}
+                          disabled={!hasExpenseItemChanges || savingExpenseItems}
+                        >
+                          <Icon name="check" size={16} />
+                          {savingExpenseItems ? "Saving..." : "Save Items"}
+                        </button>
+                      </div>
                       <table className="jpp-sheet-table jpp-sheet-table--expense">
                         <thead>
                           <tr>
@@ -1274,25 +1323,41 @@ export default function JppProjectPage({ user }) {
                           </tr>
                         </thead>
                         <tbody>
-                          {expenseRows.map((row) => (
-                            <tr key={`expense-row-${row}`}>
-                              <td>
-                                <div className="jpp-sheet-blank"></div>
-                              </td>
-                              <td>
-                                <div className="jpp-sheet-blank"></div>
-                              </td>
-                              <td>
-                                <div className="jpp-sheet-blank"></div>
-                              </td>
-                              <td>
-                                <div className="jpp-sheet-blank"></div>
-                              </td>
-                              <td>
-                                <div className="jpp-sheet-box"></div>
-                              </td>
-                            </tr>
-                          ))}
+                          {expenseSheetRows.map((row) => {
+                            const item = expenseSheetItems[row];
+                            const itemLabel = item
+                              ? expenseItemEdits[item.id] ?? item.label ?? ""
+                              : "";
+                            return (
+                              <tr key={`expense-row-${row + 1}`}>
+                                <td>
+                                  <div className="jpp-sheet-blank"></div>
+                                </td>
+                                <td>
+                                  {item ? (
+                                    <input
+                                      className="jpp-sheet-input"
+                                      value={itemLabel}
+                                      onChange={(event) =>
+                                        handleExpenseItemChange(item.id, event.target.value)
+                                      }
+                                    />
+                                  ) : (
+                                    <div className="jpp-sheet-blank"></div>
+                                  )}
+                                </td>
+                                <td>
+                                  <div className="jpp-sheet-blank"></div>
+                                </td>
+                                <td>
+                                  <div className="jpp-sheet-blank"></div>
+                                </td>
+                                <td>
+                                  <div className="jpp-sheet-box"></div>
+                                </td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
@@ -2146,168 +2211,6 @@ export default function JppProjectPage({ user }) {
         </div>
       )}
 
-      {activeTab === "expenses" && (
-        <div className="jpp-tab-grid">
-          {hasBatches ? (
-            <div className="admin-card">
-              <h3>{editingExpenseId ? "Edit Expense" : "Add Expense"}</h3>
-              <form className="admin-form" onSubmit={handleExpenseSubmit}>
-                <div className="admin-form-grid">
-                  <div className="admin-form-field">
-                    <label>Batch</label>
-                    <select
-                      name="batch_id"
-                      value={expenseForm.batch_id}
-                      onChange={handleExpenseChange}
-                    >
-                      <option value="">Unassigned</option>
-                      {batches.map((batch) => (
-                        <option key={batch.id} value={String(batch.id)}>
-                          {batch.batch_code || batch.batch_name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="admin-form-field">
-                    <label>Expense Date *</label>
-                    <input
-                      type="date"
-                      name="expense_date"
-                      value={expenseForm.expense_date}
-                      onChange={handleExpenseChange}
-                    />
-                  </div>
-                  <div className="admin-form-field">
-                    <label>Category *</label>
-                    <select name="category" value={expenseForm.category} onChange={handleExpenseChange}>
-                      {expenseCategories.map((category) => (
-                        <option key={category} value={category}>
-                          {category}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="admin-form-field">
-                    <label>Amount *</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      name="amount"
-                      value={expenseForm.amount}
-                      onChange={handleExpenseChange}
-                    />
-                  </div>
-                  <div className="admin-form-field">
-                    <label>Vendor</label>
-                    <input name="vendor" value={expenseForm.vendor} onChange={handleExpenseChange} />
-                  </div>
-                  <div className="admin-form-field admin-form-field--full">
-                    <label>Description</label>
-                    <textarea
-                      name="description"
-                      value={expenseForm.description}
-                      onChange={handleExpenseChange}
-                      rows={3}
-                    />
-                  </div>
-                  <div className="admin-form-field">
-                    <label className="jpp-checkbox-inline">
-                      <input
-                        type="checkbox"
-                        name="receipt"
-                        checked={expenseForm.receipt}
-                        onChange={handleExpenseChange}
-                      />
-                      Receipt available
-                    </label>
-                  </div>
-                </div>
-
-                <div className="admin-form-actions">
-                  <button className="btn-primary" type="submit">
-                    {editingExpenseId ? "Save Changes" : "Add Expense"}
-                  </button>
-                  {editingExpenseId && (
-                    <button className="btn-secondary" type="button" onClick={handleExpenseCancel}>
-                      Cancel
-                    </button>
-                  )}
-                </div>
-              </form>
-            </div>
-          ) : (
-            <div className="admin-card jpp-empty-card">
-              <h3>No batch found</h3>
-              <p className="admin-help">Add a batch first so you can record expenses.</p>
-              <button className="btn-primary" type="button" onClick={() => setActiveTab("batches")}>
-                Go to Batches
-              </button>
-            </div>
-          )}
-
-          <div className="admin-card">
-            <div className="section-header">
-              <h3>
-                <Icon name="receipt" size={18} /> Expense History
-              </h3>
-            </div>
-            {expenses.length === 0 ? (
-              <div className="empty-state">
-                <Icon name="receipt" size={40} />
-                <h3>No expenses yet</h3>
-                <p>Log project expenses to track spend by batch.</p>
-              </div>
-            ) : (
-              <div className="jpp-table-wrap">
-                <table className="jpp-table">
-                  <thead>
-                    <tr>
-                      <th>Date</th>
-                      <th>Batch</th>
-                      <th>Category</th>
-                      <th>Amount</th>
-                      <th>Vendor</th>
-                      <th>Receipt</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {expenses.map((expense) => (
-                      <tr key={expense.id}>
-                        <td>{formatDate(expense.expense_date)}</td>
-                        <td>{getBatchLabel(expense.batch_id)}</td>
-                        <td>{expense.category}</td>
-                        <td>{formatCurrency(expense.amount)}</td>
-                        <td>{expense.vendor || "-"}</td>
-                        <td>{expense.receipt ? "Yes" : "No"}</td>
-                        <td>
-                          <div className="jpp-table-actions">
-                            <button
-                              type="button"
-                              className="link-button"
-                              onClick={() => handleExpenseEdit(expense)}
-                            >
-                              Edit
-                            </button>
-                            <button
-                              type="button"
-                              className="link-button jpp-danger"
-                              onClick={() => handleExpenseDelete(expense.id)}
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -449,8 +449,6 @@ export async function getProjectsWithMembership(memberId) {
       .select("id, code, name, description, status, start_date, project_leader")
       .order("start_date", { ascending: false });
 
-    console.log("Projects query result:", { projects, projectsError });
-
     if (projectsError) {
       console.error("Error fetching projects:", projectsError);
       return mockProjects;
@@ -667,10 +665,14 @@ export async function getJppModuleCounts() {
   if (!isSupabaseConfigured || !supabase) return mockCounts;
 
   try {
+    const projectId = await resolveProjectId("JPP");
     const [dailyRes, weeklyRes, expensesRes] = await Promise.all([
       supabase.from("jpp_daily_log").select("*", { count: "exact", head: true }),
       supabase.from("jpp_weekly_growth").select("*", { count: "exact", head: true }),
-      supabase.from("jpp_expenses").select("*", { count: "exact", head: true }),
+      supabase
+        .from("project_expenses")
+        .select("*", { count: "exact", head: true })
+        .eq("project_id", projectId),
     ]);
 
     return {
@@ -786,13 +788,13 @@ export async function getJppWeeklyGrowth() {
 }
 
 /**
- * Get JPP expenses
+ * Get project expenses (by project code or id)
  */
-export async function getJppExpenses() {
+export async function getProjectExpenses(projectRef) {
   const mockExpenses = [
     {
       id: 1,
-      batch_id: 1,
+      batch_id: null,
       expense_date: "2026-03-01",
       category: "Feed",
       amount: 12500,
@@ -814,17 +816,273 @@ export async function getJppExpenses() {
 
   if (!isSupabaseConfigured || !supabase) return mockExpenses;
 
+  const projectId = await resolveProjectId(projectRef);
   const { data, error } = await supabase
-    .from("jpp_expenses")
+    .from("project_expenses")
     .select("*")
+    .eq("project_id", projectId)
     .order("expense_date", { ascending: false });
 
   if (error) {
-    console.error("Error fetching JPP expenses:", error);
+    console.error("Error fetching project expenses:", error);
     throw error;
   }
 
   return data || [];
+}
+
+/**
+ * Get project sales (by project code or id)
+ */
+export async function getProjectSales(projectRef) {
+  const mockSales = [
+    {
+      id: 1,
+      batch_id: null,
+      sale_date: "2026-01-12",
+      product_type: "peanut_butter",
+      quantity_units: 20,
+      unit_price: 350,
+      total_amount: 7000,
+      customer_name: "Kosele Market",
+      customer_type: "retail",
+      payment_status: "paid",
+    },
+  ];
+
+  if (!isSupabaseConfigured || !supabase) return mockSales;
+
+  const projectId = await resolveProjectId(projectRef);
+  const { data, error } = await supabase
+    .from("project_sales")
+    .select("*")
+    .eq("project_id", projectId)
+    .order("sale_date", { ascending: false });
+
+  if (error) {
+    console.error("Error fetching project sales:", error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+/**
+ * Get JPP expenses
+ */
+export async function getJppExpenses() {
+  return getProjectExpenses("JPP");
+}
+
+async function resolveProjectId(projectRef) {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error("Database not configured");
+  }
+
+  if (projectRef === null || projectRef === undefined) {
+    throw new Error("Project is required");
+  }
+
+  if (typeof projectRef === "number") {
+    return projectRef;
+  }
+
+  const trimmed = String(projectRef).trim();
+  if (!trimmed) {
+    throw new Error("Project is required");
+  }
+
+  if (/^\d+$/.test(trimmed)) {
+    return Number(trimmed);
+  }
+
+  const projectCode = trimmed.toUpperCase();
+  const { data: project, error } = await supabase
+    .from("iga_projects")
+    .select("id")
+    .eq("code", projectCode)
+    .maybeSingle();
+
+  if (error) {
+    console.error("Error fetching project by code:", error);
+    throw error;
+  }
+
+  if (!project) {
+    throw new Error(`Project not found for code ${projectCode}.`);
+  }
+
+  return project.id;
+}
+
+/**
+ * Get project expense items (by project code or id)
+ */
+export async function getProjectExpenseItems(projectRef) {
+  const mockItems = [
+    { id: 1, label: "Layer feed (mash)", category: "Feed", display_order: 1 },
+    { id: 2, label: "Supplements (grit/oyster shell)", category: "Feed", display_order: 2 },
+    { id: 3, label: "Vitamins/minerals", category: "Meds", display_order: 3 },
+    { id: 4, label: "Vaccines/meds", category: "Meds", display_order: 4 },
+    { id: 5, label: "Litter/bedding", category: "Bedding", display_order: 5 },
+    { id: 6, label: "Disinfectant/cleaning", category: "Other", display_order: 6 },
+    { id: 7, label: "Egg trays/packaging", category: "Other", display_order: 7 },
+    { id: 8, label: "Electricity", category: "Utilities", display_order: 8 },
+    { id: 9, label: "Water", category: "Utilities", display_order: 9 },
+    { id: 10, label: "Transport/fuel", category: "Transport", display_order: 10 },
+    { id: 11, label: "Repairs/maintenance", category: "Repairs", display_order: 11 },
+    { id: 12, label: "Wages/labor", category: "Labour", display_order: 12 },
+    { id: 13, label: "Pest control", category: "Other", display_order: 13 },
+    { id: 14, label: "Generator fuel/LPG", category: "Utilities", display_order: 14 },
+    { id: 15, label: "Vet services", category: "Meds", display_order: 15 },
+    { id: 16, label: "Equipment replacement", category: "Repairs", display_order: 16 },
+    { id: 17, label: "Waste disposal", category: "Utilities", display_order: 17 },
+    { id: 18, label: "Security", category: "Other", display_order: 18 },
+    { id: 19, label: "Phone/data", category: "Utilities", display_order: 19 },
+    { id: 20, label: "Licenses/permits", category: "Other", display_order: 20 },
+    { id: 21, label: "Insurance", category: "Other", display_order: 21 },
+    { id: 22, label: "Bank/mobile money fees", category: "Other", display_order: 22 },
+  ];
+
+  if (!isSupabaseConfigured || !supabase) return mockItems;
+
+  const projectId = await resolveProjectId(projectRef);
+
+  const { data, error } = await supabase
+    .from("project_expense_items")
+    .select("id, label, category, display_order, is_active")
+    .eq("project_id", projectId)
+    .eq("is_active", true)
+    .order("display_order", { ascending: true });
+
+  if (error) {
+    console.error("Error fetching project expense items:", error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+export async function getProjectExpenseCategories(projectRef) {
+  const normalizedCode = projectRef ? String(projectRef).trim().toUpperCase() : "";
+  const mockCategoriesByProject = {
+    JPP: [
+      "Feed",
+      "Meds",
+      "Bedding",
+      "Labour",
+      "Repairs",
+      "Transport",
+      "Utilities",
+      "Other",
+    ],
+    JGF: [
+      "Raw Materials",
+      "Packaging",
+      "Labour",
+      "Equipment",
+      "Transport",
+      "Utilities",
+      "Marketing",
+      "Other",
+    ],
+  };
+
+  if (!isSupabaseConfigured || !supabase) {
+    return mockCategoriesByProject[normalizedCode] || [];
+  }
+
+  const projectId = await resolveProjectId(projectRef);
+
+  const { data, error } = await supabase
+    .from("project_expense_items")
+    .select("category, display_order")
+    .eq("project_id", projectId)
+    .eq("is_active", true)
+    .not("category", "is", null)
+    .order("display_order", { ascending: true });
+
+  if (error) {
+    console.error("Error fetching project expense categories:", error);
+    throw error;
+  }
+
+  const categories = [];
+  const seen = new Set();
+  (data || []).forEach((row) => {
+    const category = row.category;
+    if (!category || seen.has(category)) {
+      return;
+    }
+    seen.add(category);
+    categories.push(category);
+  });
+
+  return categories;
+}
+
+export async function createProjectExpenseItem(projectRef, payload) {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error("Database not configured");
+  }
+
+  const projectId = await resolveProjectId(projectRef);
+
+  const label = normalizeOptional(payload.label);
+  if (!label) {
+    throw new Error("Expense item label is required");
+  }
+
+  const insertPayload = {
+    project_id: projectId,
+    label,
+    category: normalizeOptional(payload.category),
+    display_order: payload.display_order ?? 0,
+    is_active: payload.is_active ?? true,
+  };
+
+  const { data, error } = await supabase
+    .from("project_expense_items")
+    .insert(insertPayload)
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Error creating project expense item:", error);
+    throw error;
+  }
+
+  return data;
+}
+
+export async function updateProjectExpenseItem(itemId, payload) {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error("Database not configured");
+  }
+
+  const updatePayload = {};
+  if ("label" in payload) updatePayload.label = normalizeOptional(payload.label);
+  if ("category" in payload) updatePayload.category = normalizeOptional(payload.category);
+  if ("display_order" in payload) updatePayload.display_order = payload.display_order;
+  if ("is_active" in payload) updatePayload.is_active = payload.is_active;
+
+  if (Object.keys(updatePayload).length === 0) {
+    throw new Error("No fields to update");
+  }
+
+  const { data, error } = await supabase
+    .from("project_expense_items")
+    .update(updatePayload)
+    .eq("id", itemId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Error updating project expense item:", error);
+    throw error;
+  }
+
+  return data;
 }
 
 export async function createJppBatch(payload) {
@@ -998,60 +1256,813 @@ export async function deleteJppWeeklyGrowth(entryId) {
   return true;
 }
 
-export async function createJppExpense(payload) {
+export async function createProjectExpense(projectRef, payload) {
   if (!isSupabaseConfigured || !supabase) {
     throw new Error("Database not configured");
   }
 
+  const projectId = await resolveProjectId(projectRef);
+  const receipt =
+    "receipt" in payload ? Boolean(payload.receipt) : Boolean(payload.receipt_available);
+
+  const insertPayload = {
+    project_id: projectId,
+    batch_id: normalizeOptional(payload.batch_id),
+    expense_date: payload.expense_date,
+    category: payload.category,
+    amount: payload.amount,
+    vendor: normalizeOptional(payload.vendor),
+    description: normalizeOptional(payload.description),
+    receipt,
+    approved_by: payload.approved_by ?? null,
+    created_by: payload.created_by ?? null,
+  };
+
   const { data, error } = await supabase
-    .from("jpp_expenses")
-    .insert(payload)
-    .select()
-    .single();
+    .from("project_expenses")
+    .insert(insertPayload)
+    .select();
 
   if (error) {
-    console.error("Error creating JPP expense:", error);
+    console.error("Error creating project expense:", error);
     throw new Error("Failed to create expense");
   }
 
-  return data;
+  return data?.[0] || null;
 }
 
-export async function updateJppExpense(expenseId, payload) {
+export async function updateProjectExpense(expenseId, payload) {
   if (!isSupabaseConfigured || !supabase) {
     throw new Error("Database not configured");
   }
 
+  const updatePayload = {};
+
+  if ("batch_id" in payload) updatePayload.batch_id = normalizeOptional(payload.batch_id);
+  if ("expense_date" in payload) updatePayload.expense_date = payload.expense_date;
+  if ("category" in payload) updatePayload.category = payload.category;
+  if ("amount" in payload) updatePayload.amount = payload.amount;
+  if ("vendor" in payload) updatePayload.vendor = normalizeOptional(payload.vendor);
+  if ("description" in payload) updatePayload.description = normalizeOptional(payload.description);
+  if ("receipt" in payload) updatePayload.receipt = Boolean(payload.receipt);
+  if ("receipt_available" in payload) {
+    updatePayload.receipt = Boolean(payload.receipt_available);
+  }
+  if ("approved_by" in payload) updatePayload.approved_by = payload.approved_by;
+  if ("created_by" in payload) updatePayload.created_by = payload.created_by;
+
+  if (Object.keys(updatePayload).length === 0) {
+    throw new Error("No fields to update");
+  }
+
+  updatePayload.updated_at = new Date().toISOString();
+
   const { data, error } = await supabase
-    .from("jpp_expenses")
-    .update(payload)
+    .from("project_expenses")
+    .update(updatePayload)
     .eq("id", expenseId)
-    .select()
-    .single();
+    .select();
 
   if (error) {
-    console.error("Error updating JPP expense:", error);
+    console.error("Error updating project expense:", error);
     throw new Error("Failed to update expense");
   }
 
-  return data;
+  return data?.[0] || null;
 }
 
-export async function deleteJppExpense(expenseId) {
+export async function deleteProjectExpense(expenseId) {
   if (!isSupabaseConfigured || !supabase) {
     throw new Error("Database not configured");
   }
 
   const { error } = await supabase
-    .from("jpp_expenses")
+    .from("project_expenses")
     .delete()
     .eq("id", expenseId);
 
   if (error) {
-    console.error("Error deleting JPP expense:", error);
+    console.error("Error deleting project expense:", error);
     throw new Error("Failed to delete expense");
   }
 
+  return true;
+}
+
+export async function createProjectSale(projectRef, payload) {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error("Database not configured");
+  }
+
+  const projectId = await resolveProjectId(projectRef);
+
+  const insertPayload = {
+    project_id: projectId,
+    batch_id: normalizeOptional(payload.batch_id),
+    sale_date: payload.sale_date,
+    product_type: normalizeOptional(payload.product_type),
+    quantity_units: payload.quantity_units ?? 0,
+    quantity_kg: payload.quantity_kg ?? 0,
+    unit_price: payload.unit_price ?? 0,
+    total_amount: payload.total_amount ?? 0,
+    customer_name: normalizeOptional(payload.customer_name),
+    customer_contact: normalizeOptional(payload.customer_contact),
+    customer_type: normalizeOptional(payload.customer_type),
+    payment_status: payload.payment_status ?? "paid",
+    payment_method: normalizeOptional(payload.payment_method),
+    notes: normalizeOptional(payload.notes),
+    created_by: payload.created_by ?? null,
+  };
+
+  const { data, error } = await supabase
+    .from("project_sales")
+    .insert(insertPayload)
+    .select();
+
+  if (error) {
+    console.error("Error creating project sale:", error);
+    throw new Error("Failed to create sale");
+  }
+
+  return data?.[0] || null;
+}
+
+export async function updateProjectSale(saleId, payload) {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error("Database not configured");
+  }
+
+  const updatePayload = {};
+
+  if ("batch_id" in payload) updatePayload.batch_id = normalizeOptional(payload.batch_id);
+  if ("sale_date" in payload) updatePayload.sale_date = payload.sale_date;
+  if ("product_type" in payload) updatePayload.product_type = normalizeOptional(payload.product_type);
+  if ("quantity_units" in payload) updatePayload.quantity_units = payload.quantity_units;
+  if ("quantity_kg" in payload) updatePayload.quantity_kg = payload.quantity_kg;
+  if ("unit_price" in payload) updatePayload.unit_price = payload.unit_price;
+  if ("total_amount" in payload) updatePayload.total_amount = payload.total_amount;
+  if ("customer_name" in payload) updatePayload.customer_name = normalizeOptional(payload.customer_name);
+  if ("customer_contact" in payload) updatePayload.customer_contact = normalizeOptional(payload.customer_contact);
+  if ("customer_type" in payload) updatePayload.customer_type = normalizeOptional(payload.customer_type);
+  if ("payment_status" in payload) updatePayload.payment_status = payload.payment_status;
+  if ("payment_method" in payload) updatePayload.payment_method = normalizeOptional(payload.payment_method);
+  if ("notes" in payload) updatePayload.notes = normalizeOptional(payload.notes);
+  if ("created_by" in payload) updatePayload.created_by = payload.created_by;
+
+  if (Object.keys(updatePayload).length === 0) {
+    throw new Error("No fields to update");
+  }
+
+  updatePayload.updated_at = new Date().toISOString();
+
+  const { data, error } = await supabase
+    .from("project_sales")
+    .update(updatePayload)
+    .eq("id", saleId)
+    .select();
+
+  if (error) {
+    console.error("Error updating project sale:", error);
+    throw new Error("Failed to update sale");
+  }
+
+  return data?.[0] || null;
+}
+
+export async function deleteProjectSale(saleId) {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error("Database not configured");
+  }
+
+  const { error } = await supabase
+    .from("project_sales")
+    .delete()
+    .eq("id", saleId);
+
+  if (error) {
+    console.error("Error deleting project sale:", error);
+    throw new Error("Failed to delete sale");
+  }
+
+  return true;
+}
+
+export async function createJppExpense(payload) {
+  return createProjectExpense("JPP", payload);
+}
+
+export async function updateJppExpense(expenseId, payload) {
+  return updateProjectExpense(expenseId, payload);
+}
+
+export async function deleteJppExpense(expenseId) {
+  return deleteProjectExpense(expenseId);
+}
+
+// ============================================
+// JGF (GROUNDNUT FOODS) PROJECT FUNCTIONS
+// ============================================
+
+/**
+ * Get JGF batches
+ */
+export async function getJgfBatches() {
+  const mockBatches = [
+    {
+      id: 1,
+      batch_code: "JGF-2026-01",
+      batch_name: "Peanut Butter Batch 1",
+      product_type: "peanut_butter",
+      start_date: "2026-01-10",
+      status: "completed",
+      raw_groundnuts_kg: 50,
+      output_quantity_kg: 42,
+      output_units: 84,
+      unit_size_grams: 500,
+      selling_price_per_unit: 350,
+    },
+    {
+      id: 2,
+      batch_code: "JGF-2026-02",
+      batch_name: "Roasted Nuts Batch 1",
+      product_type: "roasted_nuts",
+      start_date: "2026-01-15",
+      status: "in_progress",
+      raw_groundnuts_kg: 30,
+      output_quantity_kg: 25,
+      output_units: 100,
+      unit_size_grams: 250,
+      selling_price_per_unit: 200,
+    },
+  ];
+
+  if (!isSupabaseConfigured || !supabase) return mockBatches;
+
+  const { data, error } = await supabase
+    .from("jgf_batches")
+    .select("*")
+    .order("start_date", { ascending: false });
+
+  if (error) {
+    console.error("Error fetching JGF batches:", error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+/**
+ * Get JGF batch KPIs
+ */
+export async function getJgfBatchKpis() {
+  const mockKpis = [
+    {
+      id: 1,
+      batch_code: "JGF-2026-01",
+      batch_name: "Peanut Butter Batch 1",
+      product_type: "peanut_butter",
+      status: "completed",
+      raw_groundnuts_kg: 50,
+      output_quantity_kg: 42,
+      output_units: 84,
+      units_sold: 60,
+      units_remaining: 24,
+      total_batch_cost: 12500,
+      total_revenue: 21000,
+      yield_percentage: 84,
+    },
+  ];
+
+  if (!isSupabaseConfigured || !supabase) return mockKpis;
+
+  const { data, error } = await supabase
+    .from("jgf_batch_kpis")
+    .select("*")
+    .order("start_date", { ascending: false });
+
+  if (error) {
+    console.error("Error fetching JGF batch KPIs:", error);
+    return [];
+  }
+
+  return data || [];
+}
+
+/**
+ * Get JGF inventory
+ */
+export async function getJgfInventory() {
+  const mockInventory = [
+    { id: 1, item_type: "raw_material", item_name: "Raw Groundnuts", quantity: 150, unit: "kg", unit_cost: 150, reorder_level: 50 },
+    { id: 2, item_type: "packaging", item_name: "Glass Jars 500g", quantity: 200, unit: "units", unit_cost: 45, reorder_level: 100 },
+    { id: 3, item_type: "product", item_name: "Peanut Butter 500g", quantity: 24, unit: "units", unit_cost: 0, reorder_level: 0 },
+  ];
+
+  if (!isSupabaseConfigured || !supabase) return mockInventory;
+
+  const { data, error } = await supabase
+    .from("jgf_inventory")
+    .select("*")
+    .order("item_type", { ascending: true });
+
+  if (error) {
+    console.error("Error fetching JGF inventory:", error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+/**
+ * Get JGF production logs
+ */
+export async function getJgfProductionLogs() {
+  const mockLogs = [
+    {
+      id: 1,
+      batch_id: 1,
+      log_date: "2026-01-10",
+      groundnuts_processed_kg: 25,
+      output_produced_kg: 21,
+      units_packaged: 42,
+      quality_grade: "A",
+      wastage_kg: 2,
+      workers_count: 3,
+      hours_worked: 6,
+    },
+  ];
+
+  if (!isSupabaseConfigured || !supabase) return mockLogs;
+
+  const { data, error } = await supabase
+    .from("jgf_production_logs")
+    .select("*")
+    .order("log_date", { ascending: false });
+
+  if (error) {
+    console.error("Error fetching JGF production logs:", error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+/**
+ * Get JGF sales
+ */
+export async function getJgfSales() {
+  const mockSales = [
+    {
+      id: 1,
+      batch_id: 1,
+      sale_date: "2026-01-12",
+      product_type: "peanut_butter",
+      quantity_units: 20,
+      unit_price: 350,
+      total_amount: 7000,
+      customer_name: "Kosele Market",
+      customer_type: "retail",
+      payment_status: "paid",
+    },
+  ];
+
+  if (!isSupabaseConfigured || !supabase) return mockSales;
+
+  return getProjectSales("JGF");
+}
+
+/**
+ * Get JGF expenses
+ */
+export async function getJgfExpenses() {
+  const mockExpenses = [
+    {
+      id: 1,
+      batch_id: 1,
+      expense_date: "2026-01-10",
+      category: "Raw Materials",
+      amount: 7500,
+      vendor: "Local Farmers",
+      description: "Raw groundnuts purchase",
+      receipt_available: true,
+    },
+  ];
+
+  if (!isSupabaseConfigured || !supabase) return mockExpenses;
+
+  const expenses = await getProjectExpenses("JGF");
+  return expenses.map((expense) => ({
+    ...expense,
+    receipt_available: Boolean(expense.receipt),
+  }));
+}
+
+/**
+ * Get JGF purchases
+ */
+export async function getJgfPurchases() {
+  const mockPurchases = [
+    {
+      id: 1,
+      purchase_date: "2026-01-08",
+      supplier_name: "Kosele Farmers Coop",
+      item_type: "groundnuts",
+      quantity: 50,
+      unit: "kg",
+      unit_price: 150,
+      total_amount: 7500,
+      quality_grade: "A",
+      payment_status: "paid",
+    },
+  ];
+
+  if (!isSupabaseConfigured || !supabase) return mockPurchases;
+
+  const { data, error } = await supabase
+    .from("jgf_purchases")
+    .select("*")
+    .order("purchase_date", { ascending: false });
+
+  if (error) {
+    console.error("Error fetching JGF purchases:", error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+// JGF CRUD Operations
+
+export async function createJgfBatch(payload) {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error("Database not configured");
+  }
+
+  const { data, error } = await supabase
+    .from("jgf_batches")
+    .insert(payload)
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Error creating JGF batch:", error);
+    throw new Error("Failed to create batch");
+  }
+
+  return data;
+}
+
+export async function updateJgfBatch(batchId, payload) {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error("Database not configured");
+  }
+
+  const { data, error } = await supabase
+    .from("jgf_batches")
+    .update(payload)
+    .eq("id", batchId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Error updating JGF batch:", error);
+    throw new Error("Failed to update batch");
+  }
+
+  return data;
+}
+
+export async function deleteJgfBatch(batchId) {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error("Database not configured");
+  }
+
+  const { error } = await supabase
+    .from("jgf_batches")
+    .delete()
+    .eq("id", batchId);
+
+  if (error) {
+    console.error("Error deleting JGF batch:", error);
+    throw new Error("Failed to delete batch");
+  }
+
+  return true;
+}
+
+export async function createJgfProductionLog(payload) {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error("Database not configured");
+  }
+
+  const { data, error } = await supabase
+    .from("jgf_production_logs")
+    .insert(payload)
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Error creating JGF production log:", error);
+    throw new Error("Failed to create production log");
+  }
+
+  return data;
+}
+
+export async function updateJgfProductionLog(logId, payload) {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error("Database not configured");
+  }
+
+  const { data, error } = await supabase
+    .from("jgf_production_logs")
+    .update(payload)
+    .eq("id", logId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Error updating JGF production log:", error);
+    throw new Error("Failed to update production log");
+  }
+
+  return data;
+}
+
+export async function deleteJgfProductionLog(logId) {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error("Database not configured");
+  }
+
+  const { error } = await supabase
+    .from("jgf_production_logs")
+    .delete()
+    .eq("id", logId);
+
+  if (error) {
+    console.error("Error deleting JGF production log:", error);
+    throw new Error("Failed to delete production log");
+  }
+
+  return true;
+}
+
+export async function createJgfSale(payload) {
+  return createProjectSale("JGF", payload);
+}
+
+export async function updateJgfSale(saleId, payload) {
+  return updateProjectSale(saleId, payload);
+}
+
+export async function deleteJgfSale(saleId) {
+  return deleteProjectSale(saleId);
+}
+
+export async function createJgfExpense(payload) {
+  return createProjectExpense("JGF", payload);
+}
+
+export async function updateJgfExpense(expenseId, payload) {
+  return updateProjectExpense(expenseId, payload);
+}
+
+export async function deleteJgfExpense(expenseId) {
+  return deleteProjectExpense(expenseId);
+}
+
+export async function updateJgfInventory(itemId, payload) {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error("Database not configured");
+  }
+
+  const { data, error } = await supabase
+    .from("jgf_inventory")
+    .update(payload)
+    .eq("id", itemId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Error updating JGF inventory:", error);
+    throw new Error("Failed to update inventory");
+  }
+
+  return data;
+}
+
+export async function createJgfPurchase(payload) {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error("Database not configured");
+  }
+
+  const { data, error } = await supabase
+    .from("jgf_purchases")
+    .insert(payload)
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Error creating JGF purchase:", error);
+    throw new Error("Failed to create purchase");
+  }
+
+  return data;
+}
+
+export async function updateJgfPurchase(purchaseId, payload) {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error("Database not configured");
+  }
+
+  const { data, error } = await supabase
+    .from("jgf_purchases")
+    .update(payload)
+    .eq("id", purchaseId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Error updating JGF purchase:", error);
+    throw new Error("Failed to update purchase");
+  }
+
+  return data;
+}
+
+export async function deleteJgfPurchase(purchaseId) {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error("Database not configured");
+  }
+
+  const { error } = await supabase
+    .from("jgf_purchases")
+    .delete()
+    .eq("id", purchaseId);
+
+  if (error) {
+    console.error("Error deleting JGF purchase:", error);
+    throw new Error("Failed to delete purchase");
+  }
+
+  return true;
+}
+
+// ===================================
+// JGF FARMING & LAND FUNCTIONS
+// ===================================
+
+export async function getJgfLandLeases() {
+  if (!isSupabaseConfigured) return [];
+  const { data, error } = await supabase
+    .from("jgf_land_leases")
+    .select("*")
+    .order("start_date", { ascending: false });
+  if (error) {
+    console.error("Error fetching land leases:", error);
+    return [];
+  }
+  return data;
+}
+
+export async function createJgfLandLease(lease) {
+  if (!isSupabaseConfigured) return null;
+  const user = await getCurrentMember(); 
+  if (!user) return null;
+
+  const { data, error } = await supabase
+    .from("jgf_land_leases")
+    .insert([{ ...lease, created_by: user.auth_id }]) 
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+export async function updateJgfLandLease(id, updates) {
+  if (!isSupabaseConfigured) return null;
+  const { data, error } = await supabase
+    .from("jgf_land_leases")
+    .update(updates)
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteJgfLandLease(id) {
+  if (!isSupabaseConfigured) return null;
+  const { error } = await supabase.from("jgf_land_leases").delete().eq("id", id);
+  if (error) throw error;
+  return true;
+}
+
+export async function getJgfCropCycles() {
+  if (!isSupabaseConfigured) return [];
+  const { data, error } = await supabase
+    .from("jgf_crop_cycles")
+    .select(`
+      *,
+      lease:lease_id (name, location)
+    `)
+    .order("start_date", { ascending: false });
+
+  if (error) {
+    console.error("Error fetching crop cycles:", error);
+    return [];
+  }
+  return data;
+}
+
+export async function createJgfCropCycle(cycle) {
+  if (!isSupabaseConfigured) return null;
+  const user = await getCurrentMember();
+  if (!user) return null;
+
+  const { data, error } = await supabase
+    .from("jgf_crop_cycles")
+    .insert([{ ...cycle, created_by: user.auth_id }])
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+export async function updateJgfCropCycle(id, updates) {
+  if (!isSupabaseConfigured) return null;
+  const { data, error } = await supabase
+    .from("jgf_crop_cycles")
+    .update(updates)
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteJgfCropCycle(id) {
+  if (!isSupabaseConfigured) return null;
+  const { error } = await supabase.from("jgf_crop_cycles").delete().eq("id", id);
+  if (error) throw error;
+  return true;
+}
+
+export async function getJgfFarmingLogs(cycleId) {
+  if (!isSupabaseConfigured) return [];
+  let query = supabase
+    .from("jgf_farming_activities")
+    .select("*")
+    .order("activity_date", { ascending: false });
+
+  if (cycleId) {
+    query = query.eq("cycle_id", cycleId);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    console.error("Error fetching farming logs:", error);
+    return [];
+  }
+  return data;
+}
+
+export async function createJgfFarmingLog(log) {
+  if (!isSupabaseConfigured) return null;
+  const user = await getCurrentMember();
+  if (!user) return null;
+
+  const { data, error } = await supabase
+    .from("jgf_farming_activities")
+    .insert([{ ...log, created_by: user.auth_id }])
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+export async function updateJgfFarmingLog(id, updates) {
+  if (!isSupabaseConfigured) return null;
+  const { data, error } = await supabase
+    .from("jgf_farming_activities")
+    .update(updates)
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteJgfFarmingLog(id) {
+  if (!isSupabaseConfigured) return null;
+  const { error } = await supabase.from("jgf_farming_activities").delete().eq("id", id);
+  if (error) throw error;
   return true;
 }
 
