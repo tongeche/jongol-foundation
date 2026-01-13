@@ -34,6 +34,7 @@ const baseMenuItems = [
 export default function DashboardLayout({ activePage, setActivePage, children, user }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [openSections, setOpenSections] = useState(() => new Set());
+  const [isCollapsed, setIsCollapsed] = useState(false);
   const navigate = useNavigate();
   const menuItems = adminRoles.includes(user?.role)
     ? [...baseMenuItems, { key: "admin", label: "Admin Panel", icon: "users" }]
@@ -69,19 +70,33 @@ export default function DashboardLayout({ activePage, setActivePage, children, u
   return (
     <div className="dashboard-layout">
       {/* Sidebar */}
-      <aside className={`dashboard-sidebar${sidebarOpen ? " open" : ""}`}>
+      <aside
+        className={`dashboard-sidebar${sidebarOpen ? " open" : ""}${
+          isCollapsed ? " is-collapsed" : ""
+        }`}
+      >
         <div className="dashboard-sidebar-header">
           <a href="/" className="dashboard-logo">
             <img src="/assets/logo.png" alt="Jongol Foundation" />
             <span>JONGOL</span>
           </a>
-          <button
-            className="dashboard-sidebar-close"
-            onClick={() => setSidebarOpen(false)}
-            aria-label="Close menu"
-          >
-            ×
-          </button>
+          <div className="dashboard-sidebar-actions">
+            <button
+              className="dashboard-collapse-toggle"
+              onClick={() => setIsCollapsed((prev) => !prev)}
+              aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            >
+              <Icon name={isCollapsed ? "arrow-right" : "arrow-left"} size={18} />
+            </button>
+            <button
+              className="dashboard-sidebar-close"
+              onClick={() => setSidebarOpen(false)}
+              aria-label="Close menu"
+            >
+              ×
+            </button>
+          </div>
         </div>
         <nav className="dashboard-nav">
           <ul>
@@ -89,7 +104,8 @@ export default function DashboardLayout({ activePage, setActivePage, children, u
               const hasSubItems = Boolean(item.subItems?.length);
               const isActive =
                 activePage === item.key || item.subItems?.some((sub) => sub.key === activePage);
-              const isExpanded = hasSubItems && (openSections.has(item.key) || isActive);
+              const isExpanded =
+                hasSubItems && !isCollapsed && (openSections.has(item.key) || isActive);
 
               return (
                 <li key={item.key}>
@@ -98,12 +114,16 @@ export default function DashboardLayout({ activePage, setActivePage, children, u
                       hasSubItems ? " has-children" : ""
                     }`}
                     onClick={() => {
+                      if (isCollapsed && hasSubItems) {
+                        setIsCollapsed(false);
+                      }
                       if (hasSubItems) {
                         toggleSection(item.key);
                       }
                       setActivePage(item.key);
                       setSidebarOpen(false);
                     }}
+                    title={isCollapsed ? item.label : undefined}
                   >
                     <span className="dashboard-nav-item-main">
                       <Icon name={item.icon} size={20} />
@@ -130,6 +150,7 @@ export default function DashboardLayout({ activePage, setActivePage, children, u
                               setActivePage(subItem.key);
                               setSidebarOpen(false);
                             }}
+                            title={isCollapsed ? subItem.label : undefined}
                           >
                             <Icon name={subItem.icon} size={14} />
                             <span>{subItem.label}</span>
@@ -144,7 +165,11 @@ export default function DashboardLayout({ activePage, setActivePage, children, u
           </ul>
         </nav>
         <div className="dashboard-sidebar-footer">
-          <button className="dashboard-logout" onClick={handleLogout}>
+          <button
+            className="dashboard-logout"
+            onClick={handleLogout}
+            title={isCollapsed ? "Logout" : undefined}
+          >
             <Icon name="logout" size={20} />
             <span>Logout</span>
           </button>
@@ -152,7 +177,7 @@ export default function DashboardLayout({ activePage, setActivePage, children, u
       </aside>
 
       {/* Main content */}
-      <main className="dashboard-main">
+      <main className={`dashboard-main${isCollapsed ? " is-collapsed" : ""}`}>
         <header className="dashboard-header">
           <div className="dashboard-header-left">
             <button

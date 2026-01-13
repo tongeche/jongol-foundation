@@ -37,6 +37,81 @@ const initialInviteForm = {
   notes: "",
 };
 
+const adminModules = [
+  {
+    key: "members",
+    title: "Members & Roles",
+    description: "Add members, assign roles, and manage access.",
+    icon: "users",
+    sections: ["members-list"],
+    tone: "emerald",
+  },
+  {
+    key: "invites",
+    title: "Invite Codes",
+    description: "Create onboarding invites and revoke access.",
+    icon: "mail",
+    sections: ["invites-form", "invites-list"],
+    tone: "blue",
+  },
+  {
+    key: "projects",
+    title: "Projects",
+    description: "Create, assign leaders, and manage project status.",
+    icon: "briefcase",
+    tone: "violet",
+  },
+  {
+    key: "finance",
+    title: "Expenses & Sales",
+    description: "Review project spend, sales, and approvals.",
+    icon: "receipt",
+    tone: "amber",
+  },
+  {
+    key: "welfare",
+    title: "Welfare Cycles",
+    description: "Configure contributions, payouts, and balances.",
+    icon: "wallet",
+    tone: "teal",
+  },
+  {
+    key: "documents",
+    title: "Documents",
+    description: "Templates, downloads, and upload approvals.",
+    icon: "folder",
+    tone: "indigo",
+  },
+  {
+    key: "news",
+    title: "News & Updates",
+    description: "Publish announcements and member updates.",
+    icon: "newspaper",
+    tone: "rose",
+  },
+  {
+    key: "reports",
+    title: "Reports & Insights",
+    description: "Exports, KPIs, and performance summaries.",
+    icon: "trending-up",
+    tone: "cyan",
+  },
+  {
+    key: "compliance",
+    title: "Compliance",
+    description: "Audit trails, approvals, and data checks.",
+    icon: "check-circle",
+    tone: "slate",
+  },
+  {
+    key: "support",
+    title: "Support Inbox",
+    description: "Handle member issues and requests.",
+    icon: "clock-alert",
+    tone: "orange",
+  },
+];
+
 export default function AdminPage({ user }) {
   const [members, setMembers] = useState([]);
   const [invites, setInvites] = useState([]);
@@ -49,6 +124,8 @@ export default function AdminPage({ user }) {
   const [loadingInvites, setLoadingInvites] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [activeModule, setActiveModule] = useState(null);
+  const [showMemberForm, setShowMemberForm] = useState(false);
 
   const isAdmin = isAdminUser(user);
 
@@ -73,6 +150,14 @@ export default function AdminPage({ user }) {
     loadMembers();
     loadInvites();
   }, [isAdmin]);
+
+  useEffect(() => {
+    if (activeModule !== "members") {
+      setShowMemberForm(false);
+      setSelectedMemberId(null);
+      setMemberForm(initialMemberForm);
+    }
+  }, [activeModule]);
 
   const loadMembers = async () => {
     setLoadingMembers(true);
@@ -102,6 +187,16 @@ export default function AdminPage({ user }) {
     setStatusMessage("");
     setErrorMessage("");
   };
+
+  const handleModuleClick = (module) => {
+    if (!module?.sections?.length) {
+      return;
+    }
+    setActiveModule((prev) => (prev === module.key ? null : module.key));
+  };
+
+  const activeModuleConfig = adminModules.find((module) => module.key === activeModule);
+  const activeSections = new Set(activeModuleConfig?.sections || []);
 
   const handleMemberChange = (e) => {
     const { name, value } = e.target;
@@ -139,6 +234,7 @@ export default function AdminPage({ user }) {
       }
       setMemberForm(initialMemberForm);
       setSelectedMemberId(null);
+      setShowMemberForm(false);
       await loadMembers();
     } catch (error) {
       setErrorMessage(error.message || "Failed to save member.");
@@ -151,12 +247,21 @@ export default function AdminPage({ user }) {
       ...member,
     });
     setSelectedMemberId(member.id);
+    setShowMemberForm(true);
     resetMessages();
   };
 
   const handleMemberCancel = () => {
     setMemberForm(initialMemberForm);
     setSelectedMemberId(null);
+    setShowMemberForm(false);
+    resetMessages();
+  };
+
+  const handleNewMember = () => {
+    setMemberForm(initialMemberForm);
+    setSelectedMemberId(null);
+    setShowMemberForm(true);
     resetMessages();
   };
 
@@ -233,16 +338,18 @@ export default function AdminPage({ user }) {
     <div className="admin-panel">
       <div className="admin-header">
         <div>
-          <h2>Admin Panel</h2>
-          <p>Manage members, roles, and invite codes for {user?.name || "the group"}.</p>
+          <h2>Admin Console</h2>
+          <p>Control members, projects, finances, welfare, and communications.</p>
         </div>
         <div className="admin-header-actions">
-          <button className="btn-secondary" type="button" onClick={() => loadMembers()}>
-            Refresh Members
-          </button>
-          <button className="btn-secondary" type="button" onClick={() => loadInvites()}>
-            Refresh Invites
-          </button>
+          <div className="admin-search admin-search--top">
+            <Icon name="search" size={16} />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search members, invites, email or phone"
+            />
+          </div>
         </div>
       </div>
 
@@ -252,353 +359,440 @@ export default function AdminPage({ user }) {
         </div>
       )}
 
-      <div className="admin-grid">
-        <div className="admin-card">
-          <h3>{selectedMemberId ? "Edit Member" : "Create Member"}</h3>
-          <p className="admin-help">
-            Create a member profile after the auth account exists. Add the auth ID to link sign-in
-            access.
-          </p>
-          <form className="admin-form" onSubmit={handleMemberSubmit}>
-            <div className="admin-form-grid">
-              <div className="admin-form-field">
-                <label>Name *</label>
-                <input
-                  name="name"
-                  value={memberForm.name}
-                  onChange={handleMemberChange}
-                  placeholder="Full name"
-                />
-              </div>
-              <div className="admin-form-field">
-                <label>Auth ID</label>
-                <input
-                  name="auth_id"
-                  value={memberForm.auth_id}
-                  onChange={handleMemberChange}
-                  placeholder="Supabase auth UUID"
-                />
-              </div>
-              <div className="admin-form-field">
-                <label>Email</label>
-                <input
-                  name="email"
-                  type="email"
-                  value={memberForm.email}
-                  onChange={handleMemberChange}
-                  placeholder="email@example.com"
-                />
-              </div>
-              <div className="admin-form-field">
-                <label>Phone Number *</label>
-                <input
-                  name="phone_number"
-                  value={memberForm.phone_number}
-                  onChange={handleMemberChange}
-                  placeholder="+254 700 000 000"
-                />
-              </div>
-              <div className="admin-form-field">
-                <label>Role</label>
-                <select name="role" value={memberForm.role} onChange={handleMemberChange}>
-                  <option value="member">Member</option>
-                  <option value="admin">Admin</option>
-                  <option value="superadmin">Super Admin</option>
-                  <option value="project_manager">Project Manager</option>
-                </select>
-              </div>
-              <div className="admin-form-field">
-                <label>Status</label>
-                <select name="status" value={memberForm.status} onChange={handleMemberChange}>
-                  <option value="active">Active</option>
-                  <option value="pending">Pending</option>
-                  <option value="inactive">Inactive</option>
-                </select>
-              </div>
-              <div className="admin-form-field">
-                <label>Join Date</label>
-                <input
-                  type="date"
-                  name="join_date"
-                  value={memberForm.join_date}
-                  onChange={handleMemberChange}
-                />
-              </div>
-              <div className="admin-form-field">
-                <label>Gender</label>
-                <select name="gender" value={memberForm.gender} onChange={handleMemberChange}>
-                  <option value="">Select gender</option>
-                  <option value="male">Male</option>
-                  <option value="female">Female</option>
-                  <option value="other">Other</option>
-                </select>
-              </div>
-              <div className="admin-form-field">
-                <label>Occupation</label>
-                <input
-                  name="occupation"
-                  value={memberForm.occupation}
-                  onChange={handleMemberChange}
-                  placeholder="Occupation"
-                />
-              </div>
-              <div className="admin-form-field">
-                <label>National ID</label>
-                <input
-                  name="national_id"
-                  value={memberForm.national_id}
-                  onChange={handleMemberChange}
-                  placeholder="ID number"
-                />
-              </div>
-              <div className="admin-form-field admin-form-field--full">
-                <label>Address</label>
-                <input
-                  name="address"
-                  value={memberForm.address}
-                  onChange={handleMemberChange}
-                  placeholder="Street address"
-                />
-              </div>
-              <div className="admin-form-field">
-                <label>County</label>
-                <input
-                  name="county"
-                  value={memberForm.county}
-                  onChange={handleMemberChange}
-                  placeholder="County"
-                />
-              </div>
-              <div className="admin-form-field">
-                <label>Sub-County</label>
-                <input
-                  name="sub_county"
-                  value={memberForm.sub_county}
-                  onChange={handleMemberChange}
-                  placeholder="Sub-county"
-                />
-              </div>
+      {!activeModule && (
+        <div className="admin-card admin-launchpad">
+          <div className="admin-launchpad-header">
+            <div>
+              <h3>Admin Shortcuts</h3>
+              <p className="admin-help">
+                Quick access to the most common admin tools and workflows.
+              </p>
             </div>
-
-            <h4 className="admin-section-title">
-              <Icon name="heart" size={16} /> Emergency Contact
-            </h4>
-            <div className="admin-form-grid">
-              <div className="admin-form-field">
-                <label>Name</label>
-                <input
-                  name="emergency_contact_name"
-                  value={memberForm.emergency_contact_name}
-                  onChange={handleMemberChange}
-                  placeholder="Contact name"
-                />
-              </div>
-              <div className="admin-form-field">
-                <label>Phone</label>
-                <input
-                  name="emergency_contact_phone"
-                  value={memberForm.emergency_contact_phone}
-                  onChange={handleMemberChange}
-                  placeholder="Contact phone"
-                />
-              </div>
-              <div className="admin-form-field">
-                <label>Relationship</label>
-                <select
-                  name="emergency_contact_relationship"
-                  value={memberForm.emergency_contact_relationship}
-                  onChange={handleMemberChange}
+          </div>
+          <div className="admin-launchpad-grid">
+            {adminModules.map((module) => {
+              const isEnabled = Boolean(module.sections?.length);
+              const isOpen = isEnabled && activeModule === module.key;
+              return (
+                <button
+                  key={module.key}
+                  type="button"
+                  className={`admin-launchpad-card${isEnabled ? "" : " is-disabled"}${
+                    isOpen ? " is-open" : ""
+                  }`}
+                  onClick={() => handleModuleClick(module)}
+                  disabled={!isEnabled}
+                  aria-disabled={!isEnabled}
                 >
-                  <option value="">Select</option>
-                  <option value="spouse">Spouse</option>
-                  <option value="parent">Parent</option>
-                  <option value="sibling">Sibling</option>
-                  <option value="child">Child</option>
-                  <option value="friend">Friend</option>
-                  <option value="other">Other</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="admin-form-actions">
-              <button className="btn-primary" type="submit">
-                {selectedMemberId ? "Save Changes" : "Create Member"}
-              </button>
-              {selectedMemberId && (
-                <button className="btn-secondary" type="button" onClick={handleMemberCancel}>
-                  Cancel
+                  <span className={`admin-launchpad-icon tone-${module.tone || "emerald"}`}>
+                    <Icon name={module.icon} size={20} />
+                  </span>
+                  <span className="admin-launchpad-content">
+                    <span className="admin-launchpad-title">{module.title}</span>
+                    <span className="admin-launchpad-desc">{module.description}</span>
+                    <span className="admin-launchpad-meta">
+                      {isEnabled ? (isOpen ? "Focused" : "Open") : "Coming soon"}
+                    </span>
+                  </span>
                 </button>
-              )}
-            </div>
-          </form>
-        </div>
-
-        <div className="admin-card">
-          <h3>Generate Invite Code</h3>
-          <p className="admin-help">
-            Create a one-time invite code to track onboarding. Share the code securely with the
-            member.
+              );
+            })}
+          </div>
+          <p className="admin-launchpad-note">
+            Select a tile to open its tools below.
           </p>
-          <form className="admin-form" onSubmit={handleInviteSubmit}>
-            <div className="admin-form-grid">
-              <div className="admin-form-field">
-                <label>Email *</label>
-                <input
-                  name="email"
-                  type="email"
-                  value={inviteForm.email}
-                  onChange={handleInviteChange}
-                  placeholder="member@example.com"
-                />
-              </div>
-              <div className="admin-form-field">
-                <label>Phone</label>
-                <input
-                  name="phone_number"
-                  value={inviteForm.phone_number}
-                  onChange={handleInviteChange}
-                  placeholder="+254 700 000 000"
-                />
-              </div>
-              <div className="admin-form-field">
-                <label>Role</label>
-                <select name="role" value={inviteForm.role} onChange={handleInviteChange}>
-                  <option value="member">Member</option>
-                  <option value="admin">Admin</option>
-                  <option value="superadmin">Super Admin</option>
-                  <option value="project_manager">Project Manager</option>
-                </select>
-              </div>
-              <div className="admin-form-field">
-                <label>Expires (days)</label>
-                <input
-                  name="expires_in_days"
-                  value={inviteForm.expires_in_days}
-                  onChange={handleInviteChange}
-                  placeholder="30"
-                />
-              </div>
-              <div className="admin-form-field admin-form-field--full">
-                <label>Notes</label>
-                <textarea
-                  name="notes"
-                  value={inviteForm.notes}
-                  onChange={handleInviteChange}
-                  placeholder="Optional notes for this invite"
-                  rows={3}
-                />
-              </div>
-            </div>
-            <div className="admin-form-actions">
-              <button className="btn-primary" type="submit">
-                Generate Invite
-              </button>
-            </div>
-          </form>
-
-          {generatedInvite ? (
-            <div className="admin-invite-output">
-              <div>
-                <span className="admin-invite-label">Invite Code</span>
-                <strong>{generatedInvite.code}</strong>
-              </div>
-              <button className="btn-secondary" type="button" onClick={handleCopyInvite}>
-                Copy Code
-              </button>
-            </div>
-          ) : null}
         </div>
-      </div>
+      )}
 
-      <div className="admin-card">
-        <div className="admin-list-header">
-          <h3>Members</h3>
-          <div className="admin-search">
-            <Icon name="search" size={16} />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search name, email, phone"
-            />
-          </div>
-        </div>
-        {loadingMembers ? (
-          <p>Loading members...</p>
-        ) : (
-          <div className="admin-table">
-            <div className="admin-table-row admin-table-head">
-              <span>Name</span>
-              <span>Email</span>
-              <span>Phone</span>
-              <span>Role</span>
-              <span>Status</span>
-              <span>Actions</span>
-            </div>
-            {filteredMembers.map((member) => (
-              <div className="admin-table-row" key={member.id}>
-                <span>{member.name}</span>
-                <span>{member.email || "-"}</span>
-                <span>{member.phone_number || "-"}</span>
-                <span>{member.role || "member"}</span>
-                <span>{member.status || "active"}</span>
-                <span>
-                  <button
-                    type="button"
-                    className="link-button"
-                    onClick={() => handleEditMember(member)}
-                  >
-                    Edit
+      {(showMemberForm || activeSections.has("invites-form")) && (
+        <div className="admin-grid">
+          {showMemberForm && (
+            <div className="admin-card" id="admin-members">
+              <div className="admin-card-header">
+                <h3>{selectedMemberId ? "Edit Member" : "Create Member"}</h3>
+                <button
+                  type="button"
+                  className="link-button admin-card-dismiss"
+                  onClick={() => setShowMemberForm(false)}
+                >
+                  Back to list
+                </button>
+              </div>
+              <p className="admin-help">
+                Create a member profile after the auth account exists. Add the auth ID to link sign-in
+                access.
+              </p>
+              <form className="admin-form" onSubmit={handleMemberSubmit}>
+                <div className="admin-form-grid">
+                  <div className="admin-form-field">
+                    <label>Name *</label>
+                    <input
+                      name="name"
+                      value={memberForm.name}
+                      onChange={handleMemberChange}
+                      placeholder="Full name"
+                    />
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Auth ID</label>
+                    <input
+                      name="auth_id"
+                      value={memberForm.auth_id}
+                      onChange={handleMemberChange}
+                      placeholder="Supabase auth UUID"
+                    />
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Email</label>
+                    <input
+                      name="email"
+                      type="email"
+                      value={memberForm.email}
+                      onChange={handleMemberChange}
+                      placeholder="email@example.com"
+                    />
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Phone Number *</label>
+                    <input
+                      name="phone_number"
+                      value={memberForm.phone_number}
+                      onChange={handleMemberChange}
+                      placeholder="+254 700 000 000"
+                    />
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Role</label>
+                    <select name="role" value={memberForm.role} onChange={handleMemberChange}>
+                      <option value="member">Member</option>
+                      <option value="admin">Admin</option>
+                      <option value="superadmin">Super Admin</option>
+                      <option value="project_manager">Project Manager</option>
+                    </select>
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Status</label>
+                    <select name="status" value={memberForm.status} onChange={handleMemberChange}>
+                      <option value="active">Active</option>
+                      <option value="pending">Pending</option>
+                      <option value="inactive">Inactive</option>
+                    </select>
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Join Date</label>
+                    <input
+                      type="date"
+                      name="join_date"
+                      value={memberForm.join_date}
+                      onChange={handleMemberChange}
+                    />
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Gender</label>
+                    <select name="gender" value={memberForm.gender} onChange={handleMemberChange}>
+                      <option value="">Select gender</option>
+                      <option value="male">Male</option>
+                      <option value="female">Female</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Occupation</label>
+                    <input
+                      name="occupation"
+                      value={memberForm.occupation}
+                      onChange={handleMemberChange}
+                      placeholder="Occupation"
+                    />
+                  </div>
+                  <div className="admin-form-field">
+                    <label>National ID</label>
+                    <input
+                      name="national_id"
+                      value={memberForm.national_id}
+                      onChange={handleMemberChange}
+                      placeholder="ID number"
+                    />
+                  </div>
+                  <div className="admin-form-field admin-form-field--full">
+                    <label>Address</label>
+                    <input
+                      name="address"
+                      value={memberForm.address}
+                      onChange={handleMemberChange}
+                      placeholder="Street address"
+                    />
+                  </div>
+                  <div className="admin-form-field">
+                    <label>County</label>
+                    <input
+                      name="county"
+                      value={memberForm.county}
+                      onChange={handleMemberChange}
+                      placeholder="County"
+                    />
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Sub-County</label>
+                    <input
+                      name="sub_county"
+                      value={memberForm.sub_county}
+                      onChange={handleMemberChange}
+                      placeholder="Sub-county"
+                    />
+                  </div>
+                </div>
+
+                <h4 className="admin-section-title">
+                  <Icon name="heart" size={16} /> Emergency Contact
+                </h4>
+                <div className="admin-form-grid">
+                  <div className="admin-form-field">
+                    <label>Name</label>
+                    <input
+                      name="emergency_contact_name"
+                      value={memberForm.emergency_contact_name}
+                      onChange={handleMemberChange}
+                      placeholder="Contact name"
+                    />
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Phone</label>
+                    <input
+                      name="emergency_contact_phone"
+                      value={memberForm.emergency_contact_phone}
+                      onChange={handleMemberChange}
+                      placeholder="Contact phone"
+                    />
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Relationship</label>
+                    <select
+                      name="emergency_contact_relationship"
+                      value={memberForm.emergency_contact_relationship}
+                      onChange={handleMemberChange}
+                    >
+                      <option value="">Select</option>
+                      <option value="spouse">Spouse</option>
+                      <option value="parent">Parent</option>
+                      <option value="sibling">Sibling</option>
+                      <option value="child">Child</option>
+                      <option value="friend">Friend</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="admin-form-actions">
+                  <button className="btn-primary" type="submit">
+                    {selectedMemberId ? "Save Changes" : "Create Member"}
                   </button>
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="admin-card">
-        <h3>Invite Codes</h3>
-        {loadingInvites ? (
-          <p>Loading invites...</p>
-        ) : (
-          <div className="admin-table">
-            <div className="admin-table-row admin-table-head">
-              <span>Email</span>
-              <span>Role</span>
-              <span>Status</span>
-              <span>Code</span>
-              <span>Expires</span>
-              <span>Actions</span>
+                  {selectedMemberId && (
+                    <button className="btn-secondary" type="button" onClick={handleMemberCancel}>
+                      Cancel
+                    </button>
+                  )}
+                </div>
+              </form>
             </div>
-            {invites.map((invite) => (
-              <div className="admin-table-row" key={invite.id}>
-                <span>{invite.email}</span>
-                <span>{invite.role}</span>
-                <span>{invite.status}</span>
-                <span>{invite.code_prefix}</span>
-                <span>
-                  {invite.expires_at
-                    ? new Date(invite.expires_at).toLocaleDateString()
-                    : "-"}
-                </span>
-                <span>
-                  {invite.status === "pending" ? (
+          )}
+
+          {activeSections.has("invites-form") && (
+            <div className="admin-card" id="admin-invites">
+              <div className="admin-card-header">
+                <h3>Generate Invite Code</h3>
+                <button
+                  type="button"
+                  className="link-button admin-card-dismiss"
+                  onClick={() => setActiveModule(null)}
+                >
+                  Back to console
+                </button>
+              </div>
+              <p className="admin-help">
+                Create a one-time invite code to track onboarding. Share the code securely with the
+                member.
+              </p>
+              <form className="admin-form" onSubmit={handleInviteSubmit}>
+                <div className="admin-form-grid">
+                  <div className="admin-form-field">
+                    <label>Email *</label>
+                    <input
+                      name="email"
+                      type="email"
+                      value={inviteForm.email}
+                      onChange={handleInviteChange}
+                      placeholder="member@example.com"
+                    />
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Phone</label>
+                    <input
+                      name="phone_number"
+                      value={inviteForm.phone_number}
+                      onChange={handleInviteChange}
+                      placeholder="+254 700 000 000"
+                    />
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Role</label>
+                    <select name="role" value={inviteForm.role} onChange={handleInviteChange}>
+                      <option value="member">Member</option>
+                      <option value="admin">Admin</option>
+                      <option value="superadmin">Super Admin</option>
+                      <option value="project_manager">Project Manager</option>
+                    </select>
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Expires (days)</label>
+                    <input
+                      name="expires_in_days"
+                      value={inviteForm.expires_in_days}
+                      onChange={handleInviteChange}
+                      placeholder="30"
+                    />
+                  </div>
+                  <div className="admin-form-field admin-form-field--full">
+                    <label>Notes</label>
+                    <textarea
+                      name="notes"
+                      value={inviteForm.notes}
+                      onChange={handleInviteChange}
+                      placeholder="Optional notes for this invite"
+                      rows={3}
+                    />
+                  </div>
+                </div>
+                <div className="admin-form-actions">
+                  <button className="btn-primary" type="submit">
+                    Generate Invite
+                  </button>
+                </div>
+              </form>
+
+              {generatedInvite ? (
+                <div className="admin-invite-output">
+                  <div>
+                    <span className="admin-invite-label">Invite Code</span>
+                    <strong>{generatedInvite.code}</strong>
+                  </div>
+                  <button className="btn-secondary" type="button" onClick={handleCopyInvite}>
+                    Copy Code
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeSections.has("members-list") && (
+        <div className="admin-card" id="admin-members-list">
+          <div className="admin-card-header">
+            <h3>Members</h3>
+            <div className="admin-card-actions">
+              <button type="button" className="btn-primary small" onClick={handleNewMember}>
+                <Icon name="plus" size={16} />
+                New Member
+              </button>
+              <button
+                type="button"
+                className="link-button admin-card-dismiss"
+                onClick={() => setActiveModule(null)}
+              >
+                Back to console
+              </button>
+            </div>
+          </div>
+          {loadingMembers ? (
+            <p>Loading members...</p>
+          ) : (
+            <div className="admin-table">
+              <div className="admin-table-row admin-table-head">
+                <span>Name</span>
+                <span>Email</span>
+                <span>Phone</span>
+                <span>Role</span>
+                <span>Status</span>
+                <span>Actions</span>
+              </div>
+              {filteredMembers.map((member) => (
+                <div className="admin-table-row" key={member.id}>
+                  <span>{member.name}</span>
+                  <span>{member.email || "-"}</span>
+                  <span>{member.phone_number || "-"}</span>
+                  <span>{member.role || "member"}</span>
+                  <span>{member.status || "active"}</span>
+                  <span>
                     <button
                       type="button"
                       className="link-button"
-                      onClick={() => handleRevokeInvite(invite.id)}
+                      onClick={() => handleEditMember(member)}
                     >
-                      Revoke
+                      Edit
                     </button>
-                  ) : (
-                    "-"
-                  )}
-                </span>
-              </div>
-            ))}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeSections.has("invites-list") && (
+        <div className="admin-card" id="admin-invite-list">
+          <div className="admin-card-header">
+            <h3>Invite Codes</h3>
+            <button
+              type="button"
+              className="link-button admin-card-dismiss"
+              onClick={() => setActiveModule(null)}
+            >
+              Back to console
+            </button>
           </div>
-        )}
-      </div>
+          {loadingInvites ? (
+            <p>Loading invites...</p>
+          ) : (
+            <div className="admin-table">
+              <div className="admin-table-row admin-table-head">
+                <span>Email</span>
+                <span>Role</span>
+                <span>Status</span>
+                <span>Code</span>
+                <span>Expires</span>
+                <span>Actions</span>
+              </div>
+              {invites.map((invite) => (
+                <div className="admin-table-row" key={invite.id}>
+                  <span>{invite.email}</span>
+                  <span>{invite.role}</span>
+                  <span>{invite.status}</span>
+                  <span>{invite.code_prefix}</span>
+                  <span>
+                    {invite.expires_at
+                      ? new Date(invite.expires_at).toLocaleDateString()
+                      : "-"}
+                  </span>
+                  <span>
+                    {invite.status === "pending" ? (
+                      <button
+                        type="button"
+                        className="link-button"
+                        onClick={() => handleRevokeInvite(invite.id)}
+                      >
+                        Revoke
+                      </button>
+                    ) : (
+                      "-"
+                    )}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

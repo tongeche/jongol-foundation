@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import DashboardLayout from "./DashboardLayout.jsx";
 import DashboardOverview from "./DashboardOverview.jsx";
 import ContributionsPage from "./ContributionsPage.jsx";
-import PayoutsPage from "./PayoutsPage.jsx";
 import WelfarePage from "./WelfarePage.jsx";
 import ProjectsPage from "./ProjectsPage.jsx";
 import JppProjectPage from "./JppProjectPage.jsx";
@@ -68,9 +67,9 @@ export default function Dashboard() {
       case "contributions":
         return <ContributionsPage user={user} />;
       case "payouts":
-        return <PayoutsPage user={user} />;
+        return <WelfarePage user={user} initialTab="payouts" />;
       case "welfare":
-        return <WelfarePage user={user} />;
+        return <WelfarePage user={user} initialTab="overview" />;
       case "projects":
         return <ProjectsPage user={user} setActivePage={setActivePage} />;
       case "projects-jpp":

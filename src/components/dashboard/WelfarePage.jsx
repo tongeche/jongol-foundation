@@ -1,22 +1,37 @@
 import { useState, useEffect } from "react";
-import { getWelfareSummary, getWelfareTransactions } from "../../lib/dataService.js";
+import {
+  getMemberPayout,
+  getPayoutSchedule,
+  getWelfareSummary,
+  getWelfareTransactions,
+} from "../../lib/dataService.js";
 import { Icon } from "../icons.jsx";
 
-export default function WelfarePage({ user }) {
+export default function WelfarePage({ user, initialTab = "overview" }) {
   const [summary, setSummary] = useState(null);
   const [transactions, setTransactions] = useState([]);
+  const [payoutSchedule, setPayoutSchedule] = useState([]);
+  const [myPayout, setMyPayout] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState("overview");
+  const [activeTab, setActiveTab] = useState(initialTab);
+
+  useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab]);
 
   useEffect(() => {
     async function loadWelfare() {
       try {
-        const [summaryData, txns] = await Promise.all([
+        const [summaryData, txns, schedule, memberPayout] = await Promise.all([
           getWelfareSummary(),
           getWelfareTransactions(user?.id),
+          getPayoutSchedule(),
+          user?.id ? getMemberPayout(user.id) : Promise.resolve(null),
         ]);
         setSummary(summaryData);
         setTransactions(txns);
+        setPayoutSchedule(schedule);
+        setMyPayout(memberPayout);
       } catch (error) {
         console.error("Error loading welfare data:", error);
       } finally {
@@ -37,6 +52,16 @@ export default function WelfarePage({ user }) {
 
   const formatCurrency = (amount) => {
     return `Ksh. ${amount?.toLocaleString() || 0}`;
+  };
+
+  const getPayoutStatus = (payout) => {
+    const today = new Date();
+    const payoutDate = new Date(payout.date);
+
+    if (payout.status === "completed") return "Received";
+    if (payoutDate < today) return "Received";
+    if (payoutDate.toDateString() === today.toDateString()) return "Today";
+    return "Pending";
   };
 
   if (loading) {
@@ -132,6 +157,13 @@ export default function WelfarePage({ user }) {
           Overview
         </button>
         <button 
+          className={`welfare-tab ${activeTab === 'payouts' ? 'active' : ''}`}
+          onClick={() => setActiveTab('payouts')}
+        >
+          <Icon name="calendar" size={16} />
+          Payout Schedule
+        </button>
+        <button 
           className={`welfare-tab ${activeTab === 'transactions' ? 'active' : ''}`}
           onClick={() => setActiveTab('transactions')}
         >
@@ -181,6 +213,56 @@ export default function WelfarePage({ user }) {
                 <span className="summary-value">{formatCurrency(summary?.finalAmount || 12000)}</span>
               </div>
             </div>
+          </div>
+        </div>
+      ) : activeTab === 'payouts' ? (
+        <div className="payouts-page">
+          <div className="payouts-info">
+            <div className="payout-highlight">
+              <span className="payout-highlight-label">Your Turn</span>
+              <span className="payout-highlight-value">#{myPayout?.cycle_number || "N/A"}</span>
+            </div>
+            <div className="payout-highlight">
+              <span className="payout-highlight-label">Expected Date</span>
+              <span className="payout-highlight-value">{formatDate(myPayout?.date)}</span>
+            </div>
+            <div className="payout-highlight">
+              <span className="payout-highlight-label">Amount</span>
+              <span className="payout-highlight-value">Ksh. {myPayout?.amount || 500}</span>
+            </div>
+          </div>
+
+          <div className="payouts-table-wrap">
+            {payoutSchedule.length > 0 ? (
+              <table className="payouts-table">
+                <thead>
+                  <tr>
+                    <th>Turn</th>
+                    <th>Member</th>
+                    <th>Date</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {payoutSchedule.map((p) => {
+                    const isMe = p.member_id === user?.id;
+                    const status = getPayoutStatus(p);
+                    return (
+                      <tr key={p.id} className={isMe ? "highlight-row" : ""}>
+                        <td data-label="Turn">#{p.cycle_number}</td>
+                        <td data-label="Member">{isMe ? "You" : p.members?.name || "Member"}</td>
+                        <td data-label="Date">{formatDate(p.date)}</td>
+                        <td data-label="Status">
+                          <span className={`status-badge ${status.toLowerCase()}`}>{status}</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            ) : (
+              <p className="no-data">No payout schedule available yet.</p>
+            )}
           </div>
         </div>
       ) : (
