@@ -304,6 +304,7 @@ export default function AdminPage({ user }) {
                   <option value="member">Member</option>
                   <option value="admin">Admin</option>
                   <option value="superadmin">Super Admin</option>
+                  <option value="project_manager">Project Manager</option>
                 </select>
               </div>
               <div className="admin-form-field">
@@ -465,6 +466,7 @@ export default function AdminPage({ user }) {
                   <option value="member">Member</option>
                   <option value="admin">Admin</option>
                   <option value="superadmin">Super Admin</option>
+                  <option value="project_manager">Project Manager</option>
                 </select>
               </div>
               <div className="admin-form-field">

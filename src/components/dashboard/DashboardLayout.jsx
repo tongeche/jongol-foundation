@@ -9,7 +9,12 @@ const baseMenuItems = [
   { key: "contributions", label: "My Contributions", icon: "wallet" },
   { key: "payouts", label: "Payout Schedule", icon: "calendar" },
   { key: "welfare", label: "Welfare Account", icon: "heart" },
-  { key: "projects", label: "IGA Projects", icon: "briefcase" },
+  {
+    key: "projects",
+    label: "IGA Projects",
+    icon: "briefcase",
+    subItems: [{ key: "projects-jpp", label: "JPP Project", icon: "arrow-right" }],
+  },
   { key: "news", label: "News & Updates", icon: "newspaper" },
   { key: "documents", label: "Documents", icon: "folder" },
   { key: "meetings", label: "Meetings", icon: "users" },
@@ -22,6 +27,10 @@ export default function DashboardLayout({ activePage, setActivePage, children, u
   const menuItems = adminRoles.includes(user?.role)
     ? [...baseMenuItems, { key: "admin", label: "Admin Panel", icon: "users" }]
     : baseMenuItems;
+
+  const flatMenuItems = menuItems.flatMap((item) =>
+    item.subItems ? [item, ...item.subItems] : [item]
+  );
 
   const handleLogout = async () => {
     try {
@@ -56,7 +65,11 @@ export default function DashboardLayout({ activePage, setActivePage, children, u
             {menuItems.map((item) => (
               <li key={item.key}>
                 <button
-                  className={`dashboard-nav-item${activePage === item.key ? " active" : ""}`}
+                  className={`dashboard-nav-item${
+                    activePage === item.key || item.subItems?.some((sub) => sub.key === activePage)
+                      ? " active"
+                      : ""
+                  }`}
                   onClick={() => {
                     setActivePage(item.key);
                     setSidebarOpen(false);
@@ -65,6 +78,26 @@ export default function DashboardLayout({ activePage, setActivePage, children, u
                   <Icon name={item.icon} size={20} />
                   <span>{item.label}</span>
                 </button>
+                {item.subItems && (
+                  <ul className="dashboard-nav-sublist">
+                    {item.subItems.map((subItem) => (
+                      <li key={subItem.key}>
+                        <button
+                          className={`dashboard-nav-subitem${
+                            activePage === subItem.key ? " active" : ""
+                          }`}
+                          onClick={() => {
+                            setActivePage(subItem.key);
+                            setSidebarOpen(false);
+                          }}
+                        >
+                          <Icon name={subItem.icon} size={14} />
+                          <span>{subItem.label}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </li>
             ))}
           </ul>
@@ -88,7 +121,7 @@ export default function DashboardLayout({ activePage, setActivePage, children, u
             >
               <Icon name="menu" size={22} />
             </button>
-            <h1>{menuItems.find((m) => m.key === activePage)?.label || "Dashboard"}</h1>
+            <h1>{flatMenuItems.find((m) => m.key === activePage)?.label || "Dashboard"}</h1>
           </div>
           <div className="dashboard-user">
             <span className="dashboard-user-name">{user?.name || "Member"}</span>

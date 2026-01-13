@@ -571,6 +571,491 @@ export async function leaveProject(projectId, memberId) {
 }
 
 /**
+ * Get JPP batches
+ */
+export async function getJppBatches() {
+  const mockBatches = [
+    {
+      id: 1,
+      batch_code: "JPP-2026-01-A",
+      batch_name: "Brooder A",
+      start_date: "2026-01-05",
+      supplier_name: "Kisumu Hatchery",
+      bird_type: "Broiler",
+      breed: "Kuroiler",
+      starting_count: 350,
+      feed_on_hand_kg: 120,
+    },
+    {
+      id: 2,
+      batch_code: "JPP-2026-02-B",
+      batch_name: "Grower Pen 2",
+      start_date: "2026-02-10",
+      supplier_name: "Homa Bay Chicks",
+      bird_type: "Layer",
+      breed: "Sasso",
+      starting_count: 280,
+      feed_on_hand_kg: 85,
+    },
+  ];
+
+  if (!isSupabaseConfigured || !supabase) return mockBatches;
+
+  const { data, error } = await supabase
+    .from("jpp_batches")
+    .select("*")
+    .order("start_date", { ascending: false });
+
+  if (error) {
+    console.error("Error fetching JPP batches:", error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+/**
+ * Get JPP batch KPIs
+ */
+export async function getJppBatchKpis() {
+  const mockKpis = [
+    {
+      batch_code: "JPP-2026-01-A",
+      batch_name: "Brooder A",
+      start_date: "2026-01-05",
+      starting_count: 350,
+      total_deaths: 8,
+      estimated_alive_now: 342,
+      mortality_pct: 2.29,
+      total_feed_kg: 520.5,
+      total_spend: 215000,
+    },
+    {
+      batch_code: "JPP-2026-02-B",
+      batch_name: "Grower Pen 2",
+      start_date: "2026-02-10",
+      starting_count: 280,
+      total_deaths: 4,
+      estimated_alive_now: 276,
+      mortality_pct: 1.43,
+      total_feed_kg: 310.2,
+      total_spend: 142500,
+    },
+  ];
+
+  if (!isSupabaseConfigured || !supabase) return mockKpis;
+
+  const { data, error } = await supabase
+    .from("v_jpp_batch_kpis")
+    .select("*")
+    .order("start_date", { ascending: false });
+
+  if (error) {
+    console.error("Error fetching JPP batch KPIs:", error);
+    return [];
+  }
+
+  return data || [];
+}
+
+/**
+ * Get JPP module counts
+ */
+export async function getJppModuleCounts() {
+  const mockCounts = { dailyLogs: 18, weeklyGrowth: 4, expenses: 12 };
+
+  if (!isSupabaseConfigured || !supabase) return mockCounts;
+
+  try {
+    const [dailyRes, weeklyRes, expensesRes] = await Promise.all([
+      supabase.from("jpp_daily_log").select("*", { count: "exact", head: true }),
+      supabase.from("jpp_weekly_growth").select("*", { count: "exact", head: true }),
+      supabase.from("jpp_expenses").select("*", { count: "exact", head: true }),
+    ]);
+
+    return {
+      dailyLogs: dailyRes.count || 0,
+      weeklyGrowth: weeklyRes.count || 0,
+      expenses: expensesRes.count || 0,
+    };
+  } catch (error) {
+    console.error("Error fetching JPP module counts:", error);
+    return { dailyLogs: 0, weeklyGrowth: 0, expenses: 0 };
+  }
+}
+
+/**
+ * Get JPP daily logs
+ */
+export async function getJppDailyLogs() {
+  const mockDailyLogs = [
+    {
+      id: 1,
+      batch_id: 1,
+      log_date: "2026-03-01",
+      water_clean_full_am: true,
+      feed_given_am: true,
+      feed_given_pm: true,
+      droppings_normal: true,
+      temp_vent_ok: true,
+      cleaned_drinkers: true,
+      cleaned_feeders: false,
+      predator_check_done: true,
+      alive_count: 342,
+      deaths_today: 1,
+      death_cause_code: "U",
+      feed_used_kg: 18.5,
+      water_refills: 4,
+      eggs_collected: 0,
+      money_spent: 1200,
+      notes: "Regular feeding and checks.",
+    },
+    {
+      id: 2,
+      batch_id: 2,
+      log_date: "2026-03-02",
+      water_clean_full_am: true,
+      feed_given_am: true,
+      feed_given_pm: false,
+      droppings_normal: true,
+      temp_vent_ok: true,
+      cleaned_drinkers: true,
+      cleaned_feeders: true,
+      predator_check_done: true,
+      alive_count: 276,
+      deaths_today: 0,
+      death_cause_code: null,
+      feed_used_kg: 14.2,
+      water_refills: 3,
+      eggs_collected: 0,
+      money_spent: 0,
+      notes: "",
+    },
+  ];
+
+  if (!isSupabaseConfigured || !supabase) return mockDailyLogs;
+
+  const { data, error } = await supabase
+    .from("jpp_daily_log")
+    .select("*")
+    .order("log_date", { ascending: false });
+
+  if (error) {
+    console.error("Error fetching JPP daily logs:", error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+/**
+ * Get JPP weekly growth logs
+ */
+export async function getJppWeeklyGrowth() {
+  const mockWeekly = [
+    {
+      id: 1,
+      batch_id: 1,
+      week_ending: "2026-03-02",
+      sample_size: 20,
+      avg_weight_kg: 1.8,
+      min_weight_kg: 1.2,
+      max_weight_kg: 2.3,
+      body_score_avg: 3.6,
+      feed_used_week_kg: 95,
+      meds_given: "Vitamin boost",
+      birds_sold: 0,
+      birds_culled: 1,
+      notes: "Weights improving.",
+    },
+  ];
+
+  if (!isSupabaseConfigured || !supabase) return mockWeekly;
+
+  const { data, error } = await supabase
+    .from("jpp_weekly_growth")
+    .select("*")
+    .order("week_ending", { ascending: false });
+
+  if (error) {
+    console.error("Error fetching JPP weekly growth:", error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+/**
+ * Get JPP expenses
+ */
+export async function getJppExpenses() {
+  const mockExpenses = [
+    {
+      id: 1,
+      batch_id: 1,
+      expense_date: "2026-03-01",
+      category: "Feed",
+      amount: 12500,
+      vendor: "Kosele Feeds",
+      description: "Starter feed",
+      receipt: true,
+    },
+    {
+      id: 2,
+      batch_id: null,
+      expense_date: "2026-03-02",
+      category: "Utilities",
+      amount: 2500,
+      vendor: "PowerCo",
+      description: "Brooder electricity",
+      receipt: false,
+    },
+  ];
+
+  if (!isSupabaseConfigured || !supabase) return mockExpenses;
+
+  const { data, error } = await supabase
+    .from("jpp_expenses")
+    .select("*")
+    .order("expense_date", { ascending: false });
+
+  if (error) {
+    console.error("Error fetching JPP expenses:", error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+export async function createJppBatch(payload) {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error("Database not configured");
+  }
+
+  const { data, error } = await supabase
+    .from("jpp_batches")
+    .insert(payload)
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Error creating JPP batch:", error);
+    throw new Error("Failed to create batch");
+  }
+
+  return data;
+}
+
+export async function updateJppBatch(batchId, payload) {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error("Database not configured");
+  }
+
+  const { data, error } = await supabase
+    .from("jpp_batches")
+    .update(payload)
+    .eq("id", batchId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Error updating JPP batch:", error);
+    throw new Error("Failed to update batch");
+  }
+
+  return data;
+}
+
+export async function deleteJppBatch(batchId) {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error("Database not configured");
+  }
+
+  const { error } = await supabase
+    .from("jpp_batches")
+    .delete()
+    .eq("id", batchId);
+
+  if (error) {
+    console.error("Error deleting JPP batch:", error);
+    throw new Error("Failed to delete batch");
+  }
+
+  return true;
+}
+
+export async function createJppDailyLog(payload) {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error("Database not configured");
+  }
+
+  const { data, error } = await supabase
+    .from("jpp_daily_log")
+    .insert(payload)
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Error creating JPP daily log:", error);
+    throw new Error("Failed to create daily log");
+  }
+
+  return data;
+}
+
+export async function updateJppDailyLog(logId, payload) {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error("Database not configured");
+  }
+
+  const { data, error } = await supabase
+    .from("jpp_daily_log")
+    .update(payload)
+    .eq("id", logId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Error updating JPP daily log:", error);
+    throw new Error("Failed to update daily log");
+  }
+
+  return data;
+}
+
+export async function deleteJppDailyLog(logId) {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error("Database not configured");
+  }
+
+  const { error } = await supabase
+    .from("jpp_daily_log")
+    .delete()
+    .eq("id", logId);
+
+  if (error) {
+    console.error("Error deleting JPP daily log:", error);
+    throw new Error("Failed to delete daily log");
+  }
+
+  return true;
+}
+
+export async function createJppWeeklyGrowth(payload) {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error("Database not configured");
+  }
+
+  const { data, error } = await supabase
+    .from("jpp_weekly_growth")
+    .insert(payload)
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Error creating JPP weekly growth:", error);
+    throw new Error("Failed to create weekly growth entry");
+  }
+
+  return data;
+}
+
+export async function updateJppWeeklyGrowth(entryId, payload) {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error("Database not configured");
+  }
+
+  const { data, error } = await supabase
+    .from("jpp_weekly_growth")
+    .update(payload)
+    .eq("id", entryId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Error updating JPP weekly growth:", error);
+    throw new Error("Failed to update weekly growth entry");
+  }
+
+  return data;
+}
+
+export async function deleteJppWeeklyGrowth(entryId) {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error("Database not configured");
+  }
+
+  const { error } = await supabase
+    .from("jpp_weekly_growth")
+    .delete()
+    .eq("id", entryId);
+
+  if (error) {
+    console.error("Error deleting JPP weekly growth:", error);
+    throw new Error("Failed to delete weekly growth entry");
+  }
+
+  return true;
+}
+
+export async function createJppExpense(payload) {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error("Database not configured");
+  }
+
+  const { data, error } = await supabase
+    .from("jpp_expenses")
+    .insert(payload)
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Error creating JPP expense:", error);
+    throw new Error("Failed to create expense");
+  }
+
+  return data;
+}
+
+export async function updateJppExpense(expenseId, payload) {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error("Database not configured");
+  }
+
+  const { data, error } = await supabase
+    .from("jpp_expenses")
+    .update(payload)
+    .eq("id", expenseId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Error updating JPP expense:", error);
+    throw new Error("Failed to update expense");
+  }
+
+  return data;
+}
+
+export async function deleteJppExpense(expenseId) {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error("Database not configured");
+  }
+
+  const { error } = await supabase
+    .from("jpp_expenses")
+    .delete()
+    .eq("id", expenseId);
+
+  if (error) {
+    console.error("Error deleting JPP expense:", error);
+    throw new Error("Failed to delete expense");
+  }
+
+  return true;
+}
+
+/**
  * Get blog posts / news
  */
 export async function getNews() {

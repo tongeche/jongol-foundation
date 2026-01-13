@@ -1,0 +1,2313 @@
+import { useEffect, useMemo, useState } from "react";
+import { Icon } from "../icons.jsx";
+import {
+  createJppBatch,
+  createJppDailyLog,
+  createJppExpense,
+  createJppWeeklyGrowth,
+  deleteJppBatch,
+  deleteJppDailyLog,
+  deleteJppExpense,
+  deleteJppWeeklyGrowth,
+  getJppBatchKpis,
+  getJppBatches,
+  getJppDailyLogs,
+  getJppExpenses,
+  getJppWeeklyGrowth,
+  updateJppBatch,
+  updateJppDailyLog,
+  updateJppExpense,
+  updateJppWeeklyGrowth,
+} from "../../lib/dataService.js";
+
+const deathCauseOptions = [
+  { value: "", label: "None" },
+  { value: "U", label: "Unknown" },
+  { value: "C", label: "Cold" },
+  { value: "D", label: "Disease" },
+  { value: "P", label: "Predator" },
+  { value: "I", label: "Injury" },
+  { value: "S", label: "Stress" },
+];
+
+const expenseCategories = [
+  "Feed",
+  "Meds",
+  "Bedding",
+  "Labour",
+  "Repairs",
+  "Transport",
+  "Utilities",
+  "Other",
+];
+
+const dailyChecklistItems = ["Water", "Feed AM", "Feed PM", "Temp OK"];
+const dailyRows = Array.from({ length: 7 }, (_, index) => index + 1);
+const expenseRows = Array.from({ length: 8 }, (_, index) => index + 1);
+const weekDayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const downloadDocs = [
+  { key: "weekly", label: "Offline Weekly Sheet" },
+  { key: "expenses", label: "Expense Log Sheet" },
+  { key: "feed-inventory", label: "Feed Inventory Sheet" },
+];
+
+export default function JppProjectPage({ user }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const canManage = ["admin", "superadmin", "project_manager"].includes(user?.role);
+
+  const initialBatchForm = {
+    batch_code: "",
+    batch_name: "",
+    start_date: today,
+    supplier_name: "",
+    supplier_contact: "",
+    bird_type: "",
+    breed: "",
+    starting_count: "",
+    avg_start_weight_kg: "",
+    cost_birds: "",
+    cost_transport: "",
+    cost_initial_meds: "",
+    feed_on_hand_kg: "",
+    notes: "",
+  };
+
+  const initialDailyForm = {
+    batch_id: "",
+    log_date: today,
+    water_clean_full_am: false,
+    feed_given_am: false,
+    feed_given_pm: false,
+    droppings_normal: true,
+    temp_vent_ok: true,
+    cleaned_drinkers: false,
+    cleaned_feeders: false,
+    predator_check_done: false,
+    alive_count: "",
+    deaths_today: "",
+    death_cause_code: "",
+    feed_used_kg: "",
+    water_refills: "",
+    eggs_collected: "",
+    money_spent: "",
+    notes: "",
+  };
+
+  const initialWeeklyForm = {
+    batch_id: "",
+    week_ending: today,
+    sample_size: "",
+    avg_weight_kg: "",
+    min_weight_kg: "",
+    max_weight_kg: "",
+    body_score_avg: "",
+    feed_used_week_kg: "",
+    meds_given: "",
+    birds_sold: "",
+    birds_culled: "",
+    notes: "",
+  };
+
+  const initialExpenseForm = {
+    batch_id: "",
+    expense_date: today,
+    category: "Feed",
+    amount: "",
+    vendor: "",
+    description: "",
+    receipt: false,
+  };
+
+  const [activeTab, setActiveTab] = useState("overview");
+  const [batches, setBatches] = useState([]);
+  const [kpis, setKpis] = useState([]);
+  const [dailyLogs, setDailyLogs] = useState([]);
+  const [weeklyGrowth, setWeeklyGrowth] = useState([]);
+  const [expenses, setExpenses] = useState([]);
+  const [moduleCounts, setModuleCounts] = useState({
+    dailyLogs: 0,
+    weeklyGrowth: 0,
+    expenses: 0,
+  });
+  const [loading, setLoading] = useState(true);
+
+  const [batchForm, setBatchForm] = useState(initialBatchForm);
+  const [dailyForm, setDailyForm] = useState(initialDailyForm);
+  const [weeklyForm, setWeeklyForm] = useState(initialWeeklyForm);
+  const [expenseForm, setExpenseForm] = useState(initialExpenseForm);
+
+  const [editingBatchId, setEditingBatchId] = useState(null);
+  const [editingDailyId, setEditingDailyId] = useState(null);
+  const [editingWeeklyId, setEditingWeeklyId] = useState(null);
+  const [editingExpenseId, setEditingExpenseId] = useState(null);
+  const [selectedBatchId, setSelectedBatchId] = useState("");
+  const [printSheet, setPrintSheet] = useState("");
+  const [selectedDownloadDoc, setSelectedDownloadDoc] = useState("");
+  const [showDownloadPreview, setShowDownloadPreview] = useState(false);
+
+  const [statusMessage, setStatusMessage] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
+  const hasBatches = batches.length > 0;
+
+  const handlePrint = (sheetKey) => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    setPrintSheet(sheetKey);
+    setTimeout(() => window.print(), 50);
+  };
+
+  const resetMessages = () => {
+    setStatusMessage("");
+    setErrorMessage("");
+  };
+
+  const loadJppData = async (showLoading = true) => {
+    if (showLoading) {
+      setLoading(true);
+    }
+    try {
+      resetMessages();
+      const results = await Promise.allSettled([
+        getJppBatches(),
+        getJppBatchKpis(),
+        getJppDailyLogs(),
+        getJppWeeklyGrowth(),
+        getJppExpenses(),
+      ]);
+
+      const [batchRes, kpiRes, dailyRes, weeklyRes, expenseRes] = results;
+
+      const safeBatches = batchRes.status === "fulfilled" ? batchRes.value || [] : [];
+      const safeKpis = kpiRes.status === "fulfilled" ? kpiRes.value || [] : [];
+      const safeDaily = dailyRes.status === "fulfilled" ? dailyRes.value || [] : [];
+      const safeWeekly = weeklyRes.status === "fulfilled" ? weeklyRes.value || [] : [];
+      const safeExpenses = expenseRes.status === "fulfilled" ? expenseRes.value || [] : [];
+
+      const errors = results
+        .filter((res) => res.status === "rejected")
+        .map((res) => res.reason?.message || "Failed to load data.");
+
+      setBatches(safeBatches);
+      setKpis(safeKpis);
+      setDailyLogs(safeDaily);
+      setWeeklyGrowth(safeWeekly);
+      setExpenses(safeExpenses);
+      setModuleCounts({
+        dailyLogs: safeDaily.length,
+        weeklyGrowth: safeWeekly.length,
+        expenses: safeExpenses.length,
+      });
+
+      if (safeBatches.length > 0) {
+        const selectedExists = safeBatches.some(
+          (batch) => String(batch.id) === selectedBatchId
+        );
+        if (!selectedExists) {
+          setSelectedBatchId(String(safeBatches[0].id));
+        }
+      } else if (selectedBatchId) {
+        setSelectedBatchId("");
+      }
+
+      if (errors.length > 0) {
+        setErrorMessage(errors.join(" "));
+      }
+    } catch (error) {
+      console.error("Error loading JPP data:", error);
+      setErrorMessage("Failed to load JPP data.");
+    } finally {
+      if (showLoading) {
+        setLoading(false);
+      }
+    }
+  };
+
+  useEffect(() => {
+    loadJppData(true);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+    const handleAfterPrint = () => {
+      setPrintSheet("");
+    };
+    window.addEventListener("afterprint", handleAfterPrint);
+    return () => {
+      window.removeEventListener("afterprint", handleAfterPrint);
+    };
+  }, []);
+
+  const batchLookup = useMemo(() => {
+    return new Map(batches.map((batch) => [String(batch.id), batch]));
+  }, [batches]);
+
+  const selectedBatch = useMemo(() => {
+    if (!selectedBatchId) {
+      return null;
+    }
+    return batchLookup.get(selectedBatchId) || null;
+  }, [batchLookup, selectedBatchId]);
+
+  const getBatchLabel = (batchId) => {
+    if (!batchId) return "Unassigned";
+    const batch = batchLookup.get(String(batchId));
+    if (!batch) return "Unknown";
+    return batch.batch_code || batch.batch_name || "Batch";
+  };
+
+  const parseRequiredInteger = (value) => {
+    if (value === "" || value === null || value === undefined) {
+      return null;
+    }
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
+  const parseOptionalInteger = (value) => {
+    if (value === "" || value === null || value === undefined) {
+      return null;
+    }
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
+  const parseNumberOrZero = (value) => {
+    if (value === "" || value === null || value === undefined) {
+      return 0;
+    }
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  const parseOptionalNumber = (value) => {
+    if (value === "" || value === null || value === undefined) {
+      return null;
+    }
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
+  const normalizeOptional = (value) => {
+    if (value === undefined || value === null) {
+      return null;
+    }
+    const trimmed = typeof value === "string" ? value.trim() : value;
+    return trimmed === "" ? null : trimmed;
+  };
+
+  const toNumber = (value) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  const formatNumber = (value) => toNumber(value).toLocaleString("en-KE");
+  const formatKg = (value) =>
+    `${toNumber(value).toLocaleString("en-KE", { maximumFractionDigits: 1 })} kg`;
+  const formatCurrency = (value) => `Ksh. ${toNumber(value).toLocaleString("en-KE")}`;
+  const formatPercent = (value) => `${toNumber(value).toFixed(2)}%`;
+  const formatDate = (dateStr) => {
+    if (!dateStr) return "N/A";
+    return new Date(dateStr).toLocaleDateString("en-KE", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  };
+
+  const formatOptional = (value, formatter) => {
+    if (value === null || value === undefined || value === "") {
+      return "-";
+    }
+    return formatter(value);
+  };
+
+  const totals = kpis.reduce(
+    (acc, row) => {
+      acc.starting += toNumber(row.starting_count);
+      acc.deaths += toNumber(row.total_deaths);
+      acc.alive += toNumber(row.estimated_alive_now);
+      acc.feed += toNumber(row.total_feed_kg);
+      acc.spend += toNumber(row.total_spend);
+      return acc;
+    },
+    { starting: 0, deaths: 0, alive: 0, feed: 0, spend: 0 }
+  );
+
+  const mortalityPct = totals.starting ? (totals.deaths / totals.starting) * 100 : 0;
+  const latestStartDate = batches.reduce((latest, batch) => {
+    if (!batch.start_date) return latest;
+    if (!latest) return batch.start_date;
+    return new Date(batch.start_date) > new Date(latest) ? batch.start_date : latest;
+  }, null);
+
+  const handleBatchChange = (event) => {
+    const { name, value } = event.target;
+    setBatchForm((prev) => ({ ...prev, [name]: value }));
+    resetMessages();
+  };
+
+  const handleDailyChange = (event) => {
+    const { name, value, type, checked } = event.target;
+    setDailyForm((prev) => ({ ...prev, [name]: type === "checkbox" ? checked : value }));
+    resetMessages();
+  };
+
+  const handleWeeklyChange = (event) => {
+    const { name, value, type, checked } = event.target;
+    setWeeklyForm((prev) => ({ ...prev, [name]: type === "checkbox" ? checked : value }));
+    resetMessages();
+  };
+
+  const handleExpenseChange = (event) => {
+    const { name, value, type, checked } = event.target;
+    setExpenseForm((prev) => ({ ...prev, [name]: type === "checkbox" ? checked : value }));
+    resetMessages();
+  };
+
+  const handleBatchSelect = (event) => {
+    setSelectedBatchId(event.target.value);
+  };
+
+  const handleDownloadDocSelect = (event) => {
+    setSelectedDownloadDoc(event.target.value);
+    setShowDownloadPreview(false);
+  };
+
+  const handleDownloadView = () => {
+    if (!selectedDownloadDoc) {
+      return;
+    }
+    setShowDownloadPreview(true);
+  };
+
+  const handleDownloadPrint = () => {
+    if (!selectedDownloadDoc) {
+      return;
+    }
+    setShowDownloadPreview(true);
+    handlePrint(selectedDownloadDoc);
+  };
+
+  const handleBatchSubmit = async (event) => {
+    event.preventDefault();
+    resetMessages();
+
+    if (!batchForm.batch_code.trim()) {
+      setErrorMessage("Batch code is required.");
+      return;
+    }
+
+    if (!batchForm.start_date) {
+      setErrorMessage("Start date is required.");
+      return;
+    }
+
+    const startingCount = parseRequiredInteger(batchForm.starting_count);
+    if (startingCount === null) {
+      setErrorMessage("Starting count is required.");
+      return;
+    }
+
+    const payload = {
+      batch_code: batchForm.batch_code.trim(),
+      batch_name: normalizeOptional(batchForm.batch_name),
+      start_date: batchForm.start_date,
+      supplier_name: normalizeOptional(batchForm.supplier_name),
+      supplier_contact: normalizeOptional(batchForm.supplier_contact),
+      bird_type: normalizeOptional(batchForm.bird_type),
+      breed: normalizeOptional(batchForm.breed),
+      starting_count: startingCount,
+      avg_start_weight_kg: parseOptionalNumber(batchForm.avg_start_weight_kg),
+      cost_birds: parseNumberOrZero(batchForm.cost_birds),
+      cost_transport: parseNumberOrZero(batchForm.cost_transport),
+      cost_initial_meds: parseNumberOrZero(batchForm.cost_initial_meds),
+      feed_on_hand_kg: parseNumberOrZero(batchForm.feed_on_hand_kg),
+      notes: normalizeOptional(batchForm.notes),
+    };
+
+    try {
+      if (editingBatchId) {
+        await updateJppBatch(editingBatchId, payload);
+        setStatusMessage("Batch updated successfully.");
+      } else {
+        await createJppBatch(payload);
+        setStatusMessage("Batch created successfully.");
+      }
+      setBatchForm(initialBatchForm);
+      setEditingBatchId(null);
+      await loadJppData(false);
+    } catch (error) {
+      setErrorMessage(error.message || "Failed to save batch.");
+    }
+  };
+
+  const handleDailySubmit = async (event) => {
+    event.preventDefault();
+    resetMessages();
+
+    if (!dailyForm.batch_id) {
+      setErrorMessage("Select a batch for the daily log.");
+      return;
+    }
+
+    if (!dailyForm.log_date) {
+      setErrorMessage("Log date is required.");
+      return;
+    }
+
+    const payload = {
+      batch_id: dailyForm.batch_id,
+      log_date: dailyForm.log_date,
+      water_clean_full_am: dailyForm.water_clean_full_am,
+      feed_given_am: dailyForm.feed_given_am,
+      feed_given_pm: dailyForm.feed_given_pm,
+      droppings_normal: dailyForm.droppings_normal,
+      temp_vent_ok: dailyForm.temp_vent_ok,
+      cleaned_drinkers: dailyForm.cleaned_drinkers,
+      cleaned_feeders: dailyForm.cleaned_feeders,
+      predator_check_done: dailyForm.predator_check_done,
+      alive_count: parseOptionalInteger(dailyForm.alive_count),
+      deaths_today: parseNumberOrZero(dailyForm.deaths_today),
+      death_cause_code: normalizeOptional(dailyForm.death_cause_code),
+      feed_used_kg: parseNumberOrZero(dailyForm.feed_used_kg),
+      water_refills: parseNumberOrZero(dailyForm.water_refills),
+      eggs_collected: parseNumberOrZero(dailyForm.eggs_collected),
+      money_spent: parseNumberOrZero(dailyForm.money_spent),
+      notes: normalizeOptional(dailyForm.notes),
+    };
+
+    try {
+      if (editingDailyId) {
+        await updateJppDailyLog(editingDailyId, payload);
+        setStatusMessage("Daily log updated successfully.");
+      } else {
+        await createJppDailyLog(payload);
+        setStatusMessage("Daily log added successfully.");
+      }
+      setDailyForm(initialDailyForm);
+      setEditingDailyId(null);
+      await loadJppData(false);
+    } catch (error) {
+      setErrorMessage(error.message || "Failed to save daily log.");
+    }
+  };
+
+  const handleWeeklySubmit = async (event) => {
+    event.preventDefault();
+    resetMessages();
+
+    if (!weeklyForm.batch_id) {
+      setErrorMessage("Select a batch for weekly growth.");
+      return;
+    }
+
+    if (!weeklyForm.week_ending) {
+      setErrorMessage("Week ending date is required.");
+      return;
+    }
+
+    const payload = {
+      batch_id: weeklyForm.batch_id,
+      week_ending: weeklyForm.week_ending,
+      sample_size: parseNumberOrZero(weeklyForm.sample_size),
+      avg_weight_kg: parseOptionalNumber(weeklyForm.avg_weight_kg),
+      min_weight_kg: parseOptionalNumber(weeklyForm.min_weight_kg),
+      max_weight_kg: parseOptionalNumber(weeklyForm.max_weight_kg),
+      body_score_avg: parseOptionalNumber(weeklyForm.body_score_avg),
+      feed_used_week_kg: parseNumberOrZero(weeklyForm.feed_used_week_kg),
+      meds_given: normalizeOptional(weeklyForm.meds_given),
+      birds_sold: parseNumberOrZero(weeklyForm.birds_sold),
+      birds_culled: parseNumberOrZero(weeklyForm.birds_culled),
+      notes: normalizeOptional(weeklyForm.notes),
+    };
+
+    try {
+      if (editingWeeklyId) {
+        await updateJppWeeklyGrowth(editingWeeklyId, payload);
+        setStatusMessage("Weekly growth entry updated.");
+      } else {
+        await createJppWeeklyGrowth(payload);
+        setStatusMessage("Weekly growth entry added.");
+      }
+      setWeeklyForm(initialWeeklyForm);
+      setEditingWeeklyId(null);
+      await loadJppData(false);
+    } catch (error) {
+      setErrorMessage(error.message || "Failed to save weekly growth.");
+    }
+  };
+
+  const handleExpenseSubmit = async (event) => {
+    event.preventDefault();
+    resetMessages();
+
+    if (!expenseForm.expense_date) {
+      setErrorMessage("Expense date is required.");
+      return;
+    }
+
+    if (!expenseForm.category) {
+      setErrorMessage("Expense category is required.");
+      return;
+    }
+
+    const amount = parseOptionalNumber(expenseForm.amount);
+    if (amount === null) {
+      setErrorMessage("Expense amount is required.");
+      return;
+    }
+
+    const payload = {
+      batch_id: expenseForm.batch_id || null,
+      expense_date: expenseForm.expense_date,
+      category: expenseForm.category,
+      amount,
+      vendor: normalizeOptional(expenseForm.vendor),
+      description: normalizeOptional(expenseForm.description),
+      receipt: expenseForm.receipt,
+    };
+
+    try {
+      if (editingExpenseId) {
+        await updateJppExpense(editingExpenseId, payload);
+        setStatusMessage("Expense updated.");
+      } else {
+        await createJppExpense(payload);
+        setStatusMessage("Expense logged.");
+      }
+      setExpenseForm(initialExpenseForm);
+      setEditingExpenseId(null);
+      await loadJppData(false);
+    } catch (error) {
+      setErrorMessage(error.message || "Failed to save expense.");
+    }
+  };
+
+  const handleBatchEdit = (batch) => {
+    setBatchForm({
+      ...initialBatchForm,
+      ...batch,
+      start_date: batch.start_date || today,
+      starting_count: batch.starting_count ?? "",
+      avg_start_weight_kg: batch.avg_start_weight_kg ?? "",
+      cost_birds: batch.cost_birds ?? "",
+      cost_transport: batch.cost_transport ?? "",
+      cost_initial_meds: batch.cost_initial_meds ?? "",
+      feed_on_hand_kg: batch.feed_on_hand_kg ?? "",
+      supplier_name: batch.supplier_name ?? "",
+      supplier_contact: batch.supplier_contact ?? "",
+      bird_type: batch.bird_type ?? "",
+      breed: batch.breed ?? "",
+      batch_name: batch.batch_name ?? "",
+      notes: batch.notes ?? "",
+    });
+    setEditingBatchId(batch.id);
+    setActiveTab("batches");
+    resetMessages();
+  };
+
+  const handleDailyEdit = (log) => {
+    setDailyForm({
+      ...initialDailyForm,
+      ...log,
+      batch_id: log.batch_id ? String(log.batch_id) : "",
+      log_date: log.log_date || today,
+      death_cause_code: log.death_cause_code || "",
+      alive_count: log.alive_count ?? "",
+      deaths_today: log.deaths_today ?? "",
+      feed_used_kg: log.feed_used_kg ?? "",
+      water_refills: log.water_refills ?? "",
+      eggs_collected: log.eggs_collected ?? "",
+      money_spent: log.money_spent ?? "",
+      notes: log.notes ?? "",
+    });
+    setEditingDailyId(log.id);
+    setActiveTab("daily");
+    resetMessages();
+  };
+
+  const handleWeeklyEdit = (entry) => {
+    setWeeklyForm({
+      ...initialWeeklyForm,
+      ...entry,
+      batch_id: entry.batch_id ? String(entry.batch_id) : "",
+      week_ending: entry.week_ending || today,
+      sample_size: entry.sample_size ?? "",
+      avg_weight_kg: entry.avg_weight_kg ?? "",
+      min_weight_kg: entry.min_weight_kg ?? "",
+      max_weight_kg: entry.max_weight_kg ?? "",
+      body_score_avg: entry.body_score_avg ?? "",
+      feed_used_week_kg: entry.feed_used_week_kg ?? "",
+      meds_given: entry.meds_given ?? "",
+      birds_sold: entry.birds_sold ?? "",
+      birds_culled: entry.birds_culled ?? "",
+      notes: entry.notes ?? "",
+    });
+    setEditingWeeklyId(entry.id);
+    setActiveTab("weekly");
+    resetMessages();
+  };
+
+  const handleExpenseEdit = (expense) => {
+    setExpenseForm({
+      ...initialExpenseForm,
+      ...expense,
+      batch_id: expense.batch_id ? String(expense.batch_id) : "",
+      expense_date: expense.expense_date || today,
+      amount: expense.amount ?? "",
+      vendor: expense.vendor ?? "",
+      description: expense.description ?? "",
+      receipt: Boolean(expense.receipt),
+    });
+    setEditingExpenseId(expense.id);
+    setActiveTab("expenses");
+    resetMessages();
+  };
+
+  const handleBatchDelete = async (batchId) => {
+    if (!confirm("Delete this batch? This will remove related logs.")) {
+      return;
+    }
+    resetMessages();
+    try {
+      await deleteJppBatch(batchId);
+      setStatusMessage("Batch deleted.");
+      await loadJppData(false);
+    } catch (error) {
+      setErrorMessage(error.message || "Failed to delete batch.");
+    }
+  };
+
+  const handleDailyDelete = async (logId) => {
+    if (!confirm("Delete this daily log?")) {
+      return;
+    }
+    resetMessages();
+    try {
+      await deleteJppDailyLog(logId);
+      setStatusMessage("Daily log deleted.");
+      await loadJppData(false);
+    } catch (error) {
+      setErrorMessage(error.message || "Failed to delete daily log.");
+    }
+  };
+
+  const handleWeeklyDelete = async (entryId) => {
+    if (!confirm("Delete this weekly growth entry?")) {
+      return;
+    }
+    resetMessages();
+    try {
+      await deleteJppWeeklyGrowth(entryId);
+      setStatusMessage("Weekly growth entry deleted.");
+      await loadJppData(false);
+    } catch (error) {
+      setErrorMessage(error.message || "Failed to delete weekly growth entry.");
+    }
+  };
+
+  const handleExpenseDelete = async (expenseId) => {
+    if (!confirm("Delete this expense entry?")) {
+      return;
+    }
+    resetMessages();
+    try {
+      await deleteJppExpense(expenseId);
+      setStatusMessage("Expense deleted.");
+      await loadJppData(false);
+    } catch (error) {
+      setErrorMessage(error.message || "Failed to delete expense.");
+    }
+  };
+
+  const handleBatchCancel = () => {
+    setBatchForm(initialBatchForm);
+    setEditingBatchId(null);
+  };
+
+  const handleDailyCancel = () => {
+    setDailyForm(initialDailyForm);
+    setEditingDailyId(null);
+  };
+
+  const handleWeeklyCancel = () => {
+    setWeeklyForm(initialWeeklyForm);
+    setEditingWeeklyId(null);
+  };
+
+  const handleExpenseCancel = () => {
+    setExpenseForm(initialExpenseForm);
+    setEditingExpenseId(null);
+  };
+
+  if (loading) {
+    return (
+      <div className="jpp-page">
+        <div className="loading-state">
+          <div className="loading-spinner"></div>
+          <p>Loading JPP project data...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="jpp-page">
+      <div className="page-header">
+        <div className="page-header-text">
+          <h1>JPP Poultry Project</h1>
+          <p>Track batches, daily logs, growth, and expenses.</p>
+        </div>
+        <div className="jpp-header-badges">
+          <span className="jpp-badge">
+            <Icon name="calendar" size={14} />
+            {batches.length} batches
+          </span>
+          <span className="jpp-badge">
+            <Icon name="users" size={14} />
+            {formatNumber(totals.alive)} birds
+          </span>
+        </div>
+      </div>
+
+      {(statusMessage || errorMessage) && (
+        <div className={`admin-alert ${errorMessage ? "is-error" : "is-success"}`}>
+          <span>{errorMessage || statusMessage}</span>
+        </div>
+      )}
+
+      <div className="jpp-tabs">
+        <button
+          className={`jpp-tab ${activeTab === "overview" ? "active" : ""}`}
+          onClick={() => setActiveTab("overview")}
+          type="button"
+        >
+          <Icon name="home" size={16} />
+          Overview
+        </button>
+        <button
+          className={`jpp-tab ${activeTab === "batches" ? "active" : ""}`}
+          onClick={() => setActiveTab("batches")}
+          type="button"
+        >
+          <Icon name="folder" size={16} />
+          Batches
+        </button>
+        <button
+          className={`jpp-tab ${activeTab === "daily" ? "active" : ""}`}
+          onClick={() => setActiveTab("daily")}
+          type="button"
+        >
+          <Icon name="check-circle" size={16} />
+          Daily Logs
+        </button>
+        <button
+          className={`jpp-tab ${activeTab === "weekly" ? "active" : ""}`}
+          onClick={() => setActiveTab("weekly")}
+          type="button"
+        >
+          <Icon name="calendar" size={16} />
+          Weekly Growth
+        </button>
+        <button
+          className={`jpp-tab ${activeTab === "expenses" ? "active" : ""}`}
+          onClick={() => setActiveTab("expenses")}
+          type="button"
+        >
+          <Icon name="receipt" size={16} />
+          Expenses
+        </button>
+        {canManage && (
+          <button
+            className={`jpp-tab ${activeTab === "downloads" ? "active" : ""}`}
+            onClick={() => setActiveTab("downloads")}
+            type="button"
+          >
+            <Icon name="folder" size={16} />
+            Downloads
+          </button>
+        )}
+      </div>
+
+      {activeTab === "overview" && (
+        <>
+          <div className="jpp-summary-grid">
+            <div className="jpp-summary-card">
+              <div className="jpp-summary-top">
+                <span>Batches</span>
+                <Icon name="folder" size={16} />
+              </div>
+              <div className="jpp-summary-value">{formatNumber(batches.length)}</div>
+              <div className="jpp-summary-sub">
+                Latest start {latestStartDate ? formatDate(latestStartDate) : "N/A"}
+              </div>
+            </div>
+            <div className="jpp-summary-card">
+              <div className="jpp-summary-top">
+                <span>Estimated Alive</span>
+                <Icon name="heart" size={16} />
+              </div>
+              <div className="jpp-summary-value">{formatNumber(totals.alive)}</div>
+              <div className="jpp-summary-sub">Mortality {formatPercent(mortalityPct)}</div>
+            </div>
+            <div className="jpp-summary-card">
+              <div className="jpp-summary-top">
+                <span>Total Feed</span>
+                <Icon name="trending-up" size={16} />
+              </div>
+              <div className="jpp-summary-value">{formatKg(totals.feed)}</div>
+              <div className="jpp-summary-sub">From daily logs</div>
+            </div>
+            <div className="jpp-summary-card">
+              <div className="jpp-summary-top">
+                <span>Total Spend</span>
+                <Icon name="wallet" size={16} />
+              </div>
+              <div className="jpp-summary-value">{formatCurrency(totals.spend)}</div>
+              <div className="jpp-summary-sub">Daily logs and expenses</div>
+            </div>
+          </div>
+
+          <div className="jpp-ops-grid">
+            <div className="jpp-op-card">
+              <div className="jpp-op-header">
+                <Icon name="check-circle" size={16} />
+                <h3>Daily Logs</h3>
+              </div>
+              <div className="jpp-op-value">{formatNumber(moduleCounts.dailyLogs)}</div>
+              <div className="jpp-op-sub">entries recorded</div>
+            </div>
+            <div className="jpp-op-card">
+              <div className="jpp-op-header">
+                <Icon name="calendar" size={16} />
+                <h3>Weekly Growth</h3>
+              </div>
+              <div className="jpp-op-value">{formatNumber(moduleCounts.weeklyGrowth)}</div>
+              <div className="jpp-op-sub">weekly check-ins</div>
+            </div>
+            <div className="jpp-op-card">
+              <div className="jpp-op-header">
+                <Icon name="receipt" size={16} />
+                <h3>Expenses</h3>
+              </div>
+              <div className="jpp-op-value">{formatNumber(moduleCounts.expenses)}</div>
+              <div className="jpp-op-sub">logged spends</div>
+            </div>
+          </div>
+
+          <section className="jpp-section">
+            <div className="section-header">
+              <h3>
+                <Icon name="briefcase" size={18} /> Batch KPIs
+              </h3>
+            </div>
+            {kpis.length === 0 ? (
+              <div className="empty-state">
+                <Icon name="folder" size={40} />
+                <h3>No batch KPIs yet</h3>
+                <p>Batch summaries will appear once daily logs and expenses are recorded.</p>
+              </div>
+            ) : (
+              <div className="jpp-kpi-grid">
+                {kpis.map((kpi) => (
+                  <div className="jpp-kpi-card" key={kpi.batch_code || kpi.batch_name}>
+                    <div className="jpp-kpi-header">
+                      <div>
+                        <h4>{kpi.batch_name || kpi.batch_code}</h4>
+                        <span className="jpp-kpi-code">{kpi.batch_code}</span>
+                      </div>
+                      <span className="jpp-kpi-date">Started {formatDate(kpi.start_date)}</span>
+                    </div>
+                    <div className="jpp-kpi-metrics">
+                      <div className="jpp-kpi-metric">
+                        <span className="jpp-kpi-label">Starting</span>
+                        <span className="jpp-kpi-value">{formatNumber(kpi.starting_count)}</span>
+                      </div>
+                      <div className="jpp-kpi-metric">
+                        <span className="jpp-kpi-label">Deaths</span>
+                        <span className="jpp-kpi-value">{formatNumber(kpi.total_deaths)}</span>
+                      </div>
+                      <div className="jpp-kpi-metric">
+                        <span className="jpp-kpi-label">Alive</span>
+                        <span className="jpp-kpi-value">
+                          {formatNumber(kpi.estimated_alive_now)}
+                        </span>
+                      </div>
+                      <div className="jpp-kpi-metric">
+                        <span className="jpp-kpi-label">Mortality</span>
+                        <span className="jpp-kpi-value">
+                          {formatPercent(kpi.mortality_pct)}
+                        </span>
+                      </div>
+                      <div className="jpp-kpi-metric">
+                        <span className="jpp-kpi-label">Feed Used</span>
+                        <span className="jpp-kpi-value">{formatKg(kpi.total_feed_kg)}</span>
+                      </div>
+                      <div className="jpp-kpi-metric">
+                        <span className="jpp-kpi-label">Total Spend</span>
+                        <span className="jpp-kpi-value">{formatCurrency(kpi.total_spend)}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="jpp-section jpp-table-section">
+            <div className="section-header">
+              <h3>
+                <Icon name="folder" size={18} /> Batch Details
+              </h3>
+            </div>
+            {batches.length === 0 ? (
+              <div className="empty-state">
+                <Icon name="folder" size={40} />
+                <h3>No batches yet</h3>
+                <p>Create a batch to start logging daily activity.</p>
+              </div>
+            ) : (
+              <div className="jpp-table-wrap">
+                <table className="jpp-table">
+                  <thead>
+                    <tr>
+                      <th>Batch</th>
+                      <th>Start Date</th>
+                      <th>Bird Type</th>
+                      <th>Starting Count</th>
+                      <th>Feed on Hand</th>
+                      <th>Supplier</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {batches.map((batch) => (
+                      <tr key={batch.id || batch.batch_code}>
+                        <td>
+                          <div className="jpp-batch-name">
+                            <span className="jpp-batch-code">{batch.batch_code || "N/A"}</span>
+                            <span className="jpp-batch-sub">
+                              {batch.batch_name || "Unnamed batch"}
+                            </span>
+                          </div>
+                        </td>
+                        <td>{formatDate(batch.start_date)}</td>
+                        <td>
+                          {batch.bird_type || "N/A"}
+                          {batch.breed ? ` - ${batch.breed}` : ""}
+                        </td>
+                        <td>{formatNumber(batch.starting_count)}</td>
+                        <td>{formatKg(batch.feed_on_hand_kg)}</td>
+                        <td>{batch.supplier_name || "N/A"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        </>
+      )}
+
+      {activeTab === "downloads" && canManage && (
+        <section className="jpp-section">
+          <div className="section-header">
+            <h3>
+              <Icon name="folder" size={18} /> Documents
+            </h3>
+          </div>
+
+          <div className="admin-card jpp-download-panel">
+            <div className="jpp-download-header">
+              <div>
+                <h4>Documents</h4>
+                <p className="admin-help">Pick a document and then view or print it.</p>
+              </div>
+              <div className="jpp-download-actions">
+                <button
+                  className="btn-secondary"
+                  type="button"
+                  onClick={handleDownloadView}
+                  disabled={!selectedDownloadDoc}
+                >
+                  <Icon name="search" size={16} />
+                  View document
+                </button>
+                <button
+                  className="btn-primary"
+                  type="button"
+                  onClick={handleDownloadPrint}
+                  disabled={!selectedDownloadDoc}
+                >
+                  <Icon name="receipt" size={16} />
+                  Print / Save PDF
+                </button>
+              </div>
+            </div>
+
+            <div className="jpp-download-controls">
+              <div className="admin-form-field">
+                <label>Document</label>
+                <select value={selectedDownloadDoc} onChange={handleDownloadDocSelect}>
+                  <option value="">Select document</option>
+                  {downloadDocs.map((doc) => (
+                    <option key={doc.key} value={doc.key}>
+                      {doc.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="admin-form-field">
+                <label>Batch Code</label>
+                <select
+                  value={selectedBatchId}
+                  onChange={handleBatchSelect}
+                  disabled={!hasBatches}
+                >
+                  <option value="">{hasBatches ? "Select batch" : "No batches yet"}</option>
+                  {batches.map((batch) => (
+                    <option key={`batch-code-${batch.id}`} value={String(batch.id)}>
+                      {batch.batch_code || `Batch ${batch.id}`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="admin-form-field">
+                <label>Batch Name</label>
+                <select
+                  value={selectedBatchId}
+                  onChange={handleBatchSelect}
+                  disabled={!hasBatches}
+                >
+                  <option value="">{hasBatches ? "Select batch" : "No batches yet"}</option>
+                  {batches.map((batch) => (
+                    <option key={`batch-name-${batch.id}`} value={String(batch.id)}>
+                      {batch.batch_name || batch.batch_code || `Batch ${batch.id}`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {!selectedDownloadDoc || !showDownloadPreview ? (
+              <div className="jpp-download-empty">
+                <div className="jpp-empty-icon">
+                  <Icon name="alert" size={20} />
+                </div>
+                <h4>No document selected</h4>
+                <p>Select a document above, then click View or Print.</p>
+              </div>
+            ) : (
+              <div className="jpp-download-preview">
+                {selectedDownloadDoc === "weekly" && (
+                  <div
+                    className={`jpp-print-sheet${printSheet === "weekly" ? " is-print" : ""}`}
+                    aria-label="JPP Layers Weekly Sheet"
+                  >
+                    <div className="jpp-sheet-header">
+                      <div>
+                        <h2 className="jpp-sheet-title">JPP Layers - Weekly</h2>
+                        <p className="jpp-sheet-subtitle">
+                          Weekly checklist (tick what is done).
+                        </p>
+                      </div>
+                      <div className="jpp-sheet-meta">
+                        <div className="jpp-sheet-field">
+                          <span>Week Ending</span>
+                          <div className="jpp-sheet-line"></div>
+                        </div>
+                        <div className="jpp-sheet-field">
+                          <span>Feed Unit</span>
+                          <div className="jpp-sheet-line jpp-sheet-line--filled">kg</div>
+                        </div>
+                        <div className="jpp-sheet-field">
+                          <span>Recorded By</span>
+                          <div className="jpp-sheet-line"></div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="jpp-sheet-row jpp-sheet-row--compact">
+                      <div className="jpp-sheet-field">
+                        <span>Batch Code</span>
+                        <div
+                          className={`jpp-sheet-line${
+                            selectedBatch?.batch_code ? " jpp-sheet-line--filled" : ""
+                          }`}
+                        >
+                          {selectedBatch?.batch_code || ""}
+                        </div>
+                      </div>
+                      <div className="jpp-sheet-field">
+                        <span>Batch Name</span>
+                        <div
+                          className={`jpp-sheet-line${
+                            selectedBatch?.batch_name ? " jpp-sheet-line--filled" : ""
+                          }`}
+                        >
+                          {selectedBatch?.batch_name || ""}
+                        </div>
+                      </div>
+                      <div className="jpp-sheet-field">
+                        <span>Start Date</span>
+                        <div
+                          className={`jpp-sheet-line${
+                            selectedBatch?.start_date ? " jpp-sheet-line--filled" : ""
+                          }`}
+                        >
+                          {selectedBatch?.start_date ? formatDate(selectedBatch.start_date) : ""}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="jpp-sheet-section">
+                      <h3 className="jpp-sheet-section-title">Daily Checks</h3>
+                      <p className="jpp-sheet-key">Tick the box when done.</p>
+                      <table className="jpp-sheet-table jpp-sheet-table--simple">
+                        <thead>
+                          <tr>
+                            <th>Day</th>
+                            <th>Date</th>
+                            {dailyChecklistItems.map((item) => (
+                              <th key={`daily-col-${item}`}>{item}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {dailyRows.map((row, index) => (
+                            <tr key={`daily-row-${row}`}>
+                              <td>{weekDayLabels[index]}</td>
+                              <td>
+                                <div className="jpp-sheet-blank"></div>
+                              </td>
+                              {dailyChecklistItems.map((item) => (
+                                <td key={`${row}-${item}`}>
+                                  <div className="jpp-sheet-box"></div>
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="jpp-sheet-section">
+                      <h3 className="jpp-sheet-section-title">Notes / Totals</h3>
+                      <div className="jpp-sheet-notes">
+                        <div className="jpp-sheet-line"></div>
+                        <div className="jpp-sheet-line"></div>
+                        <div className="jpp-sheet-line"></div>
+                      </div>
+                    </div>
+
+                    <div className="jpp-sheet-section jpp-sheet-signoff">
+                      <div className="jpp-sheet-field">
+                        <span>Manager Signature</span>
+                        <div className="jpp-sheet-line"></div>
+                      </div>
+                      <div className="jpp-sheet-field">
+                        <span>Date Submitted</span>
+                        <div className="jpp-sheet-line"></div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {selectedDownloadDoc === "expenses" && (
+                  <div
+                    className={`jpp-print-sheet${printSheet === "expenses" ? " is-print" : ""}`}
+                    aria-label="JPP Expense Log Sheet"
+                  >
+                    <div className="jpp-sheet-header">
+                      <div>
+                        <h2 className="jpp-sheet-title">JPP Expense Log - Weekly</h2>
+                        <p className="jpp-sheet-subtitle">
+                          Write each expense and tick receipt.
+                        </p>
+                      </div>
+                      <div className="jpp-sheet-meta">
+                        <div className="jpp-sheet-field">
+                          <span>Week Ending</span>
+                          <div className="jpp-sheet-line"></div>
+                        </div>
+                        <div className="jpp-sheet-field">
+                          <span>Recorded By</span>
+                          <div className="jpp-sheet-line"></div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="jpp-sheet-row jpp-sheet-row--compact">
+                      <div className="jpp-sheet-field">
+                        <span>Batch Code</span>
+                        <div
+                          className={`jpp-sheet-line${
+                            selectedBatch?.batch_code ? " jpp-sheet-line--filled" : ""
+                          }`}
+                        >
+                          {selectedBatch?.batch_code || ""}
+                        </div>
+                      </div>
+                      <div className="jpp-sheet-field">
+                        <span>Batch Name</span>
+                        <div
+                          className={`jpp-sheet-line${
+                            selectedBatch?.batch_name ? " jpp-sheet-line--filled" : ""
+                          }`}
+                        >
+                          {selectedBatch?.batch_name || ""}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="jpp-sheet-section">
+                      <table className="jpp-sheet-table jpp-sheet-table--expense">
+                        <thead>
+                          <tr>
+                            <th>Date</th>
+                            <th>Item</th>
+                            <th>Amount</th>
+                            <th>Vendor</th>
+                            <th>Receipt</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {expenseRows.map((row) => (
+                            <tr key={`expense-row-${row}`}>
+                              <td>
+                                <div className="jpp-sheet-blank"></div>
+                              </td>
+                              <td>
+                                <div className="jpp-sheet-blank"></div>
+                              </td>
+                              <td>
+                                <div className="jpp-sheet-blank"></div>
+                              </td>
+                              <td>
+                                <div className="jpp-sheet-blank"></div>
+                              </td>
+                              <td>
+                                <div className="jpp-sheet-box"></div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="jpp-sheet-row jpp-sheet-row--compact">
+                      <div className="jpp-sheet-field">
+                        <span>Total Amount</span>
+                        <div className="jpp-sheet-line"></div>
+                      </div>
+                    </div>
+
+                    <div className="jpp-sheet-section jpp-sheet-signoff">
+                      <div className="jpp-sheet-field">
+                        <span>Manager Signature</span>
+                        <div className="jpp-sheet-line"></div>
+                      </div>
+                      <div className="jpp-sheet-field">
+                        <span>Date Submitted</span>
+                        <div className="jpp-sheet-line"></div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {selectedDownloadDoc === "feed-inventory" && (
+                  <div
+                    className={`jpp-print-sheet${
+                      printSheet === "feed-inventory" ? " is-print" : ""
+                    }`}
+                    aria-label="JPP Feed Inventory Sheet"
+                  >
+                    <div className="jpp-sheet-header">
+                      <div>
+                        <h2 className="jpp-sheet-title">JPP Feed Inventory - Weekly</h2>
+                        <p className="jpp-sheet-subtitle">
+                          Track opening stock, deliveries, usage, and closing stock.
+                        </p>
+                      </div>
+                      <div className="jpp-sheet-meta">
+                        <div className="jpp-sheet-field">
+                          <span>Week Ending</span>
+                          <div className="jpp-sheet-line"></div>
+                        </div>
+                        <div className="jpp-sheet-field">
+                          <span>Feed Unit</span>
+                          <div className="jpp-sheet-line jpp-sheet-line--filled">kg</div>
+                        </div>
+                        <div className="jpp-sheet-field">
+                          <span>Recorded By</span>
+                          <div className="jpp-sheet-line"></div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="jpp-sheet-row jpp-sheet-row--compact">
+                      <div className="jpp-sheet-field">
+                        <span>Batch Code</span>
+                        <div
+                          className={`jpp-sheet-line${
+                            selectedBatch?.batch_code ? " jpp-sheet-line--filled" : ""
+                          }`}
+                        >
+                          {selectedBatch?.batch_code || ""}
+                        </div>
+                      </div>
+                      <div className="jpp-sheet-field">
+                        <span>Batch Name</span>
+                        <div
+                          className={`jpp-sheet-line${
+                            selectedBatch?.batch_name ? " jpp-sheet-line--filled" : ""
+                          }`}
+                        >
+                          {selectedBatch?.batch_name || ""}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="jpp-sheet-section">
+                      <table className="jpp-sheet-table jpp-sheet-table--inventory">
+                        <thead>
+                          <tr>
+                            <th>Day</th>
+                            <th>Date</th>
+                            <th>Opening Stock (kg)</th>
+                            <th>Deliveries (kg)</th>
+                            <th>Daily Usage (kg)</th>
+                            <th>Closing Stock (kg)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {dailyRows.map((row, index) => (
+                            <tr key={`inventory-row-${row}`}>
+                              <td>{weekDayLabels[index]}</td>
+                              <td>
+                                <div className="jpp-sheet-blank"></div>
+                              </td>
+                              <td>
+                                <div className="jpp-sheet-blank"></div>
+                              </td>
+                              <td>
+                                <div className="jpp-sheet-blank"></div>
+                              </td>
+                              <td>
+                                <div className="jpp-sheet-blank"></div>
+                              </td>
+                              <td>
+                                <div className="jpp-sheet-blank"></div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="jpp-sheet-section jpp-sheet-signoff">
+                      <div className="jpp-sheet-field">
+                        <span>Manager Signature</span>
+                        <div className="jpp-sheet-line"></div>
+                      </div>
+                      <div className="jpp-sheet-field">
+                        <span>Date Submitted</span>
+                        <div className="jpp-sheet-line"></div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
+      {activeTab === "batches" && (
+        <div className="jpp-tab-grid">
+          <div className="admin-card">
+            <h3>{editingBatchId ? "Edit Batch" : "Add Batch"}</h3>
+            <form className="admin-form" onSubmit={handleBatchSubmit}>
+              <div className="admin-form-grid">
+                <div className="admin-form-field">
+                  <label>Batch Code *</label>
+                  <input
+                    name="batch_code"
+                    value={batchForm.batch_code}
+                    onChange={handleBatchChange}
+                    placeholder="JPP-2026-01-A"
+                  />
+                </div>
+                <div className="admin-form-field">
+                  <label>Batch Name</label>
+                  <input
+                    name="batch_name"
+                    value={batchForm.batch_name}
+                    onChange={handleBatchChange}
+                    placeholder="Brooder A"
+                  />
+                </div>
+                <div className="admin-form-field">
+                  <label>Start Date *</label>
+                  <input
+                    type="date"
+                    name="start_date"
+                    value={batchForm.start_date}
+                    onChange={handleBatchChange}
+                  />
+                </div>
+                <div className="admin-form-field">
+                  <label>Bird Type</label>
+                  <input
+                    name="bird_type"
+                    value={batchForm.bird_type}
+                    onChange={handleBatchChange}
+                    placeholder="Broiler"
+                  />
+                </div>
+                <div className="admin-form-field">
+                  <label>Breed</label>
+                  <input
+                    name="breed"
+                    value={batchForm.breed}
+                    onChange={handleBatchChange}
+                    placeholder="Kuroiler"
+                  />
+                </div>
+                <div className="admin-form-field">
+                  <label>Starting Count *</label>
+                  <input
+                    type="number"
+                    min="0"
+                    name="starting_count"
+                    value={batchForm.starting_count}
+                    onChange={handleBatchChange}
+                  />
+                </div>
+                <div className="admin-form-field">
+                  <label>Avg Start Weight (kg)</label>
+                  <input
+                    type="number"
+                    step="0.001"
+                    name="avg_start_weight_kg"
+                    value={batchForm.avg_start_weight_kg}
+                    onChange={handleBatchChange}
+                  />
+                </div>
+                <div className="admin-form-field">
+                  <label>Feed on Hand (kg)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    name="feed_on_hand_kg"
+                    value={batchForm.feed_on_hand_kg}
+                    onChange={handleBatchChange}
+                  />
+                </div>
+                <div className="admin-form-field">
+                  <label>Supplier Name</label>
+                  <input
+                    name="supplier_name"
+                    value={batchForm.supplier_name}
+                    onChange={handleBatchChange}
+                  />
+                </div>
+                <div className="admin-form-field">
+                  <label>Supplier Contact</label>
+                  <input
+                    name="supplier_contact"
+                    value={batchForm.supplier_contact}
+                    onChange={handleBatchChange}
+                  />
+                </div>
+                <div className="admin-form-field">
+                  <label>Cost - Birds</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    name="cost_birds"
+                    value={batchForm.cost_birds}
+                    onChange={handleBatchChange}
+                  />
+                </div>
+                <div className="admin-form-field">
+                  <label>Cost - Transport</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    name="cost_transport"
+                    value={batchForm.cost_transport}
+                    onChange={handleBatchChange}
+                  />
+                </div>
+                <div className="admin-form-field">
+                  <label>Cost - Initial Meds</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    name="cost_initial_meds"
+                    value={batchForm.cost_initial_meds}
+                    onChange={handleBatchChange}
+                  />
+                </div>
+                <div className="admin-form-field admin-form-field--full">
+                  <label>Notes</label>
+                  <textarea
+                    name="notes"
+                    value={batchForm.notes}
+                    onChange={handleBatchChange}
+                    rows={3}
+                  />
+                </div>
+              </div>
+              <div className="admin-form-actions">
+                <button className="btn-primary" type="submit">
+                  {editingBatchId ? "Save Changes" : "Add Batch"}
+                </button>
+                {editingBatchId && (
+                  <button className="btn-secondary" type="button" onClick={handleBatchCancel}>
+                    Cancel
+                  </button>
+                )}
+              </div>
+            </form>
+          </div>
+
+          <div className="admin-card">
+            <div className="section-header">
+              <h3>
+                <Icon name="folder" size={18} /> Batch List
+              </h3>
+            </div>
+            {batches.length === 0 ? (
+              <div className="empty-state">
+                <Icon name="folder" size={40} />
+                <h3>No batches yet</h3>
+                <p>Add the first batch to start tracking.</p>
+              </div>
+            ) : (
+              <div className="jpp-table-wrap">
+                <table className="jpp-table">
+                  <thead>
+                    <tr>
+                      <th>Batch</th>
+                      <th>Start Date</th>
+                      <th>Bird Type</th>
+                      <th>Starting Count</th>
+                      <th>Feed on Hand</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {batches.map((batch) => (
+                      <tr key={batch.id || batch.batch_code}>
+                        <td>
+                          <div className="jpp-batch-name">
+                            <span className="jpp-batch-code">{batch.batch_code || "N/A"}</span>
+                            <span className="jpp-batch-sub">
+                              {batch.batch_name || "Unnamed batch"}
+                            </span>
+                          </div>
+                        </td>
+                        <td>{formatDate(batch.start_date)}</td>
+                        <td>
+                          {batch.bird_type || "N/A"}
+                          {batch.breed ? ` - ${batch.breed}` : ""}
+                        </td>
+                        <td>{formatNumber(batch.starting_count)}</td>
+                        <td>{formatKg(batch.feed_on_hand_kg)}</td>
+                        <td>
+                          <div className="jpp-table-actions">
+                            <button
+                              type="button"
+                              className="link-button"
+                              onClick={() => handleBatchEdit(batch)}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              className="link-button jpp-danger"
+                              onClick={() => handleBatchDelete(batch.id)}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === "daily" && (
+        <div className="jpp-tab-grid">
+          {hasBatches ? (
+            <div className="admin-card">
+              <h3>{editingDailyId ? "Edit Daily Log" : "Add Daily Log"}</h3>
+              <form className="admin-form" onSubmit={handleDailySubmit}>
+                <div className="admin-form-grid">
+                  <div className="admin-form-field">
+                    <label>Batch *</label>
+                    <select name="batch_id" value={dailyForm.batch_id} onChange={handleDailyChange}>
+                      <option value="">Select batch</option>
+                      {batches.map((batch) => (
+                        <option key={batch.id} value={String(batch.id)}>
+                          {batch.batch_code || batch.batch_name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Log Date *</label>
+                    <input
+                      type="date"
+                      name="log_date"
+                      value={dailyForm.log_date}
+                      onChange={handleDailyChange}
+                    />
+                  </div>
+                </div>
+
+                <div className="jpp-checklist">
+                  <label>
+                    <input
+                      type="checkbox"
+                      name="water_clean_full_am"
+                      checked={dailyForm.water_clean_full_am}
+                      onChange={handleDailyChange}
+                    />
+                    Water clean (AM)
+                  </label>
+                  <label>
+                    <input
+                      type="checkbox"
+                      name="feed_given_am"
+                      checked={dailyForm.feed_given_am}
+                      onChange={handleDailyChange}
+                    />
+                    Feed given (AM)
+                  </label>
+                  <label>
+                    <input
+                      type="checkbox"
+                      name="feed_given_pm"
+                      checked={dailyForm.feed_given_pm}
+                      onChange={handleDailyChange}
+                    />
+                    Feed given (PM)
+                  </label>
+                  <label>
+                    <input
+                      type="checkbox"
+                      name="droppings_normal"
+                      checked={dailyForm.droppings_normal}
+                      onChange={handleDailyChange}
+                    />
+                    Droppings normal
+                  </label>
+                  <label>
+                    <input
+                      type="checkbox"
+                      name="temp_vent_ok"
+                      checked={dailyForm.temp_vent_ok}
+                      onChange={handleDailyChange}
+                    />
+                    Temp / vent ok
+                  </label>
+                  <label>
+                    <input
+                      type="checkbox"
+                      name="cleaned_drinkers"
+                      checked={dailyForm.cleaned_drinkers}
+                      onChange={handleDailyChange}
+                    />
+                    Cleaned drinkers
+                  </label>
+                  <label>
+                    <input
+                      type="checkbox"
+                      name="cleaned_feeders"
+                      checked={dailyForm.cleaned_feeders}
+                      onChange={handleDailyChange}
+                    />
+                    Cleaned feeders
+                  </label>
+                  <label>
+                    <input
+                      type="checkbox"
+                      name="predator_check_done"
+                      checked={dailyForm.predator_check_done}
+                      onChange={handleDailyChange}
+                    />
+                    Predator check done
+                  </label>
+                </div>
+
+                <div className="admin-form-grid">
+                  <div className="admin-form-field">
+                    <label>Alive Count</label>
+                    <input
+                      type="number"
+                      min="0"
+                      name="alive_count"
+                      value={dailyForm.alive_count}
+                      onChange={handleDailyChange}
+                    />
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Deaths Today</label>
+                    <input
+                      type="number"
+                      min="0"
+                      name="deaths_today"
+                      value={dailyForm.deaths_today}
+                      onChange={handleDailyChange}
+                    />
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Death Cause</label>
+                    <select
+                      name="death_cause_code"
+                      value={dailyForm.death_cause_code}
+                      onChange={handleDailyChange}
+                    >
+                      {deathCauseOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Feed Used (kg)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      name="feed_used_kg"
+                      value={dailyForm.feed_used_kg}
+                      onChange={handleDailyChange}
+                    />
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Water Refills</label>
+                    <input
+                      type="number"
+                      min="0"
+                      name="water_refills"
+                      value={dailyForm.water_refills}
+                      onChange={handleDailyChange}
+                    />
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Eggs Collected</label>
+                    <input
+                      type="number"
+                      min="0"
+                      name="eggs_collected"
+                      value={dailyForm.eggs_collected}
+                      onChange={handleDailyChange}
+                    />
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Money Spent</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      name="money_spent"
+                      value={dailyForm.money_spent}
+                      onChange={handleDailyChange}
+                    />
+                  </div>
+                  <div className="admin-form-field admin-form-field--full">
+                    <label>Notes</label>
+                    <textarea
+                      name="notes"
+                      value={dailyForm.notes}
+                      onChange={handleDailyChange}
+                      rows={3}
+                    />
+                  </div>
+                </div>
+
+                <div className="admin-form-actions">
+                  <button className="btn-primary" type="submit">
+                    {editingDailyId ? "Save Changes" : "Add Daily Log"}
+                  </button>
+                  {editingDailyId && (
+                    <button className="btn-secondary" type="button" onClick={handleDailyCancel}>
+                      Cancel
+                    </button>
+                  )}
+                </div>
+              </form>
+            </div>
+          ) : (
+            <div className="admin-card jpp-empty-card">
+              <h3>No batch found</h3>
+              <p className="admin-help">Add a batch first so you can record a daily log.</p>
+              <button className="btn-primary" type="button" onClick={() => setActiveTab("batches")}>
+                Go to Batches
+              </button>
+            </div>
+          )}
+
+          <div className="admin-card">
+            <div className="section-header">
+              <h3>
+                <Icon name="check-circle" size={18} /> Daily Log History
+              </h3>
+            </div>
+            {dailyLogs.length === 0 ? (
+              <div className="empty-state">
+                <Icon name="check-circle" size={40} />
+                <h3>No daily logs yet</h3>
+                <p>Start recording daily activity for each batch.</p>
+              </div>
+            ) : (
+              <div className="jpp-table-wrap">
+                <table className="jpp-table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Batch</th>
+                      <th>Alive</th>
+                      <th>Deaths</th>
+                      <th>Feed Used</th>
+                      <th>Eggs</th>
+                      <th>Spend</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dailyLogs.map((log) => (
+                      <tr key={log.id}>
+                        <td>{formatDate(log.log_date)}</td>
+                        <td>{getBatchLabel(log.batch_id)}</td>
+                        <td>{formatOptional(log.alive_count, formatNumber)}</td>
+                        <td>{formatNumber(log.deaths_today)}</td>
+                        <td>{formatKg(log.feed_used_kg)}</td>
+                        <td>{formatNumber(log.eggs_collected)}</td>
+                        <td>{formatCurrency(log.money_spent)}</td>
+                        <td>
+                          <div className="jpp-table-actions">
+                            <button
+                              type="button"
+                              className="link-button"
+                              onClick={() => handleDailyEdit(log)}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              className="link-button jpp-danger"
+                              onClick={() => handleDailyDelete(log.id)}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === "weekly" && (
+        <div className="jpp-tab-grid">
+          {hasBatches ? (
+            <div className="admin-card">
+              <h3>{editingWeeklyId ? "Edit Weekly Growth" : "Add Weekly Growth"}</h3>
+              <form className="admin-form" onSubmit={handleWeeklySubmit}>
+                <div className="admin-form-grid">
+                  <div className="admin-form-field">
+                    <label>Batch *</label>
+                    <select name="batch_id" value={weeklyForm.batch_id} onChange={handleWeeklyChange}>
+                      <option value="">Select batch</option>
+                      {batches.map((batch) => (
+                        <option key={batch.id} value={String(batch.id)}>
+                          {batch.batch_code || batch.batch_name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Week Ending *</label>
+                    <input
+                      type="date"
+                      name="week_ending"
+                      value={weeklyForm.week_ending}
+                      onChange={handleWeeklyChange}
+                    />
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Sample Size</label>
+                    <input
+                      type="number"
+                      min="0"
+                      name="sample_size"
+                      value={weeklyForm.sample_size}
+                      onChange={handleWeeklyChange}
+                    />
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Avg Weight (kg)</label>
+                    <input
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      name="avg_weight_kg"
+                      value={weeklyForm.avg_weight_kg}
+                      onChange={handleWeeklyChange}
+                    />
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Min Weight (kg)</label>
+                    <input
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      name="min_weight_kg"
+                      value={weeklyForm.min_weight_kg}
+                      onChange={handleWeeklyChange}
+                    />
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Max Weight (kg)</label>
+                    <input
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      name="max_weight_kg"
+                      value={weeklyForm.max_weight_kg}
+                      onChange={handleWeeklyChange}
+                    />
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Body Score Avg</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      name="body_score_avg"
+                      value={weeklyForm.body_score_avg}
+                      onChange={handleWeeklyChange}
+                    />
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Feed Used (kg)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      name="feed_used_week_kg"
+                      value={weeklyForm.feed_used_week_kg}
+                      onChange={handleWeeklyChange}
+                    />
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Meds Given</label>
+                    <input
+                      name="meds_given"
+                      value={weeklyForm.meds_given}
+                      onChange={handleWeeklyChange}
+                    />
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Birds Sold</label>
+                    <input
+                      type="number"
+                      min="0"
+                      name="birds_sold"
+                      value={weeklyForm.birds_sold}
+                      onChange={handleWeeklyChange}
+                    />
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Birds Culled</label>
+                    <input
+                      type="number"
+                      min="0"
+                      name="birds_culled"
+                      value={weeklyForm.birds_culled}
+                      onChange={handleWeeklyChange}
+                    />
+                  </div>
+                  <div className="admin-form-field admin-form-field--full">
+                    <label>Notes</label>
+                    <textarea
+                      name="notes"
+                      value={weeklyForm.notes}
+                      onChange={handleWeeklyChange}
+                      rows={3}
+                    />
+                  </div>
+                </div>
+
+                <div className="admin-form-actions">
+                  <button className="btn-primary" type="submit">
+                    {editingWeeklyId ? "Save Changes" : "Add Weekly Growth"}
+                  </button>
+                  {editingWeeklyId && (
+                    <button className="btn-secondary" type="button" onClick={handleWeeklyCancel}>
+                      Cancel
+                    </button>
+                  )}
+                </div>
+              </form>
+            </div>
+          ) : (
+            <div className="admin-card jpp-empty-card">
+              <h3>No batch found</h3>
+              <p className="admin-help">Add a batch first so you can record weekly growth.</p>
+              <button className="btn-primary" type="button" onClick={() => setActiveTab("batches")}>
+                Go to Batches
+              </button>
+            </div>
+          )}
+
+          <div className="admin-card">
+            <div className="section-header">
+              <h3>
+                <Icon name="calendar" size={18} /> Weekly Growth History
+              </h3>
+            </div>
+            {weeklyGrowth.length === 0 ? (
+              <div className="empty-state">
+                <Icon name="calendar" size={40} />
+                <h3>No weekly growth entries yet</h3>
+                <p>Capture weekly growth stats for each batch.</p>
+              </div>
+            ) : (
+              <div className="jpp-table-wrap">
+                <table className="jpp-table">
+                  <thead>
+                    <tr>
+                      <th>Week Ending</th>
+                      <th>Batch</th>
+                      <th>Avg Wt</th>
+                      <th>Min / Max</th>
+                      <th>Score</th>
+                      <th>Feed</th>
+                      <th>Sold</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {weeklyGrowth.map((entry) => (
+                      <tr key={entry.id}>
+                        <td>{formatDate(entry.week_ending)}</td>
+                        <td>{getBatchLabel(entry.batch_id)}</td>
+                        <td>{formatOptional(entry.avg_weight_kg, formatKg)}</td>
+                        <td>
+                          {formatOptional(entry.min_weight_kg, formatKg)} /{" "}
+                          {formatOptional(entry.max_weight_kg, formatKg)}
+                        </td>
+                        <td>{formatOptional(entry.body_score_avg, formatNumber)}</td>
+                        <td>{formatKg(entry.feed_used_week_kg)}</td>
+                        <td>{formatNumber(entry.birds_sold)}</td>
+                        <td>
+                          <div className="jpp-table-actions">
+                            <button
+                              type="button"
+                              className="link-button"
+                              onClick={() => handleWeeklyEdit(entry)}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              className="link-button jpp-danger"
+                              onClick={() => handleWeeklyDelete(entry.id)}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === "expenses" && (
+        <div className="jpp-tab-grid">
+          {hasBatches ? (
+            <div className="admin-card">
+              <h3>{editingExpenseId ? "Edit Expense" : "Add Expense"}</h3>
+              <form className="admin-form" onSubmit={handleExpenseSubmit}>
+                <div className="admin-form-grid">
+                  <div className="admin-form-field">
+                    <label>Batch</label>
+                    <select
+                      name="batch_id"
+                      value={expenseForm.batch_id}
+                      onChange={handleExpenseChange}
+                    >
+                      <option value="">Unassigned</option>
+                      {batches.map((batch) => (
+                        <option key={batch.id} value={String(batch.id)}>
+                          {batch.batch_code || batch.batch_name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Expense Date *</label>
+                    <input
+                      type="date"
+                      name="expense_date"
+                      value={expenseForm.expense_date}
+                      onChange={handleExpenseChange}
+                    />
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Category *</label>
+                    <select name="category" value={expenseForm.category} onChange={handleExpenseChange}>
+                      {expenseCategories.map((category) => (
+                        <option key={category} value={category}>
+                          {category}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Amount *</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      name="amount"
+                      value={expenseForm.amount}
+                      onChange={handleExpenseChange}
+                    />
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Vendor</label>
+                    <input name="vendor" value={expenseForm.vendor} onChange={handleExpenseChange} />
+                  </div>
+                  <div className="admin-form-field admin-form-field--full">
+                    <label>Description</label>
+                    <textarea
+                      name="description"
+                      value={expenseForm.description}
+                      onChange={handleExpenseChange}
+                      rows={3}
+                    />
+                  </div>
+                  <div className="admin-form-field">
+                    <label className="jpp-checkbox-inline">
+                      <input
+                        type="checkbox"
+                        name="receipt"
+                        checked={expenseForm.receipt}
+                        onChange={handleExpenseChange}
+                      />
+                      Receipt available
+                    </label>
+                  </div>
+                </div>
+
+                <div className="admin-form-actions">
+                  <button className="btn-primary" type="submit">
+                    {editingExpenseId ? "Save Changes" : "Add Expense"}
+                  </button>
+                  {editingExpenseId && (
+                    <button className="btn-secondary" type="button" onClick={handleExpenseCancel}>
+                      Cancel
+                    </button>
+                  )}
+                </div>
+              </form>
+            </div>
+          ) : (
+            <div className="admin-card jpp-empty-card">
+              <h3>No batch found</h3>
+              <p className="admin-help">Add a batch first so you can record expenses.</p>
+              <button className="btn-primary" type="button" onClick={() => setActiveTab("batches")}>
+                Go to Batches
+              </button>
+            </div>
+          )}
+
+          <div className="admin-card">
+            <div className="section-header">
+              <h3>
+                <Icon name="receipt" size={18} /> Expense History
+              </h3>
+            </div>
+            {expenses.length === 0 ? (
+              <div className="empty-state">
+                <Icon name="receipt" size={40} />
+                <h3>No expenses yet</h3>
+                <p>Log project expenses to track spend by batch.</p>
+              </div>
+            ) : (
+              <div className="jpp-table-wrap">
+                <table className="jpp-table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Batch</th>
+                      <th>Category</th>
+                      <th>Amount</th>
+                      <th>Vendor</th>
+                      <th>Receipt</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {expenses.map((expense) => (
+                      <tr key={expense.id}>
+                        <td>{formatDate(expense.expense_date)}</td>
+                        <td>{getBatchLabel(expense.batch_id)}</td>
+                        <td>{expense.category}</td>
+                        <td>{formatCurrency(expense.amount)}</td>
+                        <td>{expense.vendor || "-"}</td>
+                        <td>{expense.receipt ? "Yes" : "No"}</td>
+                        <td>
+                          <div className="jpp-table-actions">
+                            <button
+                              type="button"
+                              className="link-button"
+                              onClick={() => handleExpenseEdit(expense)}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              className="link-button jpp-danger"
+                              onClick={() => handleExpenseDelete(expense.id)}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

@@ -84,10 +84,10 @@ export default function PayoutsPage({ user }) {
               const status = getPayoutStatus(p);
               return (
                 <tr key={p.id} className={isMe ? "highlight-row" : ""}>
-                  <td>#{p.cycle_number}</td>
-                  <td>{isMe ? "You" : p.members?.name || "Member"}</td>
-                  <td>{formatDate(p.date)}</td>
-                  <td>
+                  <td data-label="Turn">#{p.cycle_number}</td>
+                  <td data-label="Member">{isMe ? "You" : p.members?.name || "Member"}</td>
+                  <td data-label="Date">{formatDate(p.date)}</td>
+                  <td data-label="Status">
                     <span className={`status-badge ${status.toLowerCase()}`}>{status}</span>
                   </td>
                 </tr>
