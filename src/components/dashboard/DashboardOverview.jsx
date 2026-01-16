@@ -96,64 +96,7 @@ export default function DashboardOverview({ user }) {
 
   return (
     <div className="dashboard-overview-modern">
-      {/* Welcome Header */}
-      <div className="dashboard-header-welcome">
-        <div className="welcome-text">
-          <h2>Welcome back, {user?.name?.split(' ')[0] || "Member"}! 👋</h2>
-          <p>Track your contributions and group activity here.</p>
-        </div>
-        <div className="header-date">
-          <Icon name="calendar" size={18} />
-          <span>{new Date().toLocaleDateString("en-KE", { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
-        </div>
-      </div>
-
-      {/* Stats Row */}
-      <div className="stats-row">
-        <div className="stat-card stat-card--primary">
-          <div className="stat-card-icon">
-            <Icon name="coins" size={24} />
-          </div>
-          <div className="stat-card-content">
-            <span className="stat-card-label">Total Contributions</span>
-            <span className="stat-card-value">Ksh. {stats.totalContributions.toLocaleString()}</span>
-          </div>
-        </div>
-        
-        <div className="stat-card stat-card--secondary">
-          <div className="stat-card-icon">
-            <Icon name="heart" size={24} />
-          </div>
-          <div className="stat-card-content">
-            <span className="stat-card-label">Welfare Fund</span>
-            <span className="stat-card-value">Ksh. {stats.welfareBalance.toLocaleString()}</span>
-          </div>
-        </div>
-        
-        <div className="stat-card stat-card--accent">
-          <div className="stat-card-icon">
-            <Icon name="calendar" size={24} />
-          </div>
-          <div className="stat-card-content">
-            <span className="stat-card-label">Your Payout Turn</span>
-            <span className="stat-card-value">#{stats.payoutTurn || "N/A"}</span>
-          </div>
-        </div>
-        
-        <div className="stat-card stat-card--info">
-          <div className="stat-card-icon">
-            <Icon name="trending-up" size={24} />
-          </div>
-          <div className="stat-card-content">
-            <span className="stat-card-label">Cycles Completed</span>
-            <span className="stat-card-value">{stats.currentCycle} / 12</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Content Grid */}
-      <div className="dashboard-grid">
-        {/* Member Debit Card */}
+      <div className="dashboard-row-4col">
         <div className="member-debit-card">
           <div className="debit-card-bg">
             <div className="debit-stripe debit-stripe-1"></div>
@@ -168,20 +111,20 @@ export default function DashboardOverview({ user }) {
               </div>
               <span className="debit-card-type">MEMBER</span>
             </div>
-            
             <div className="debit-card-chip">
               <div className="chip-lines">
-                <span></span><span></span><span></span><span></span>
+                <span></span>
+                <span></span>
+                <span></span>
+                <span></span>
               </div>
             </div>
-            
             <div className="debit-card-number">
               <span>JNG</span>
-              <span>{String(user?.id || 8).padStart(4, '0')}</span>
-              <span>{user?.national_id?.slice(0, 4) || '••••'}</span>
-              <span>{user?.national_id?.slice(4, 8) || '••••'}</span>
+              <span>{String(user?.id || 8).padStart(4, "0")}</span>
+              <span>{user?.national_id?.slice(0, 4) || "••••"}</span>
+              <span>{user?.national_id?.slice(4, 8) || "••••"}</span>
             </div>
-            
             <div className="debit-card-details">
               <div className="debit-detail">
                 <span className="debit-label">MEMBER SINCE</span>
@@ -189,19 +132,19 @@ export default function DashboardOverview({ user }) {
               </div>
               <div className="debit-detail">
                 <span className="debit-label">PAYOUT #</span>
-                <span className="debit-value">{String(stats.payoutTurn || 8).padStart(2, '0')}</span>
+                <span className="debit-value">
+                  {String(stats.payoutTurn || 8).padStart(2, "0")}
+                </span>
               </div>
             </div>
-            
             <div className="debit-card-holder">
-              <span className="holder-name">{user?.name?.toUpperCase() || 'MEMBER NAME'}</span>
+              <span className="holder-name">{user?.name?.toUpperCase() || "MEMBER NAME"}</span>
               <span className="holder-phone">{user?.phone_number || user?.email}</span>
             </div>
-            
             <div className="debit-card-footer">
               <div className="debit-status">
-                <span className={`status-dot ${user?.status || 'active'}`}></span>
-                <span>{user?.status?.toUpperCase() || 'ACTIVE'}</span>
+                <span className={`status-dot ${user?.status || "active"}`}></span>
+                <span>{user?.status?.toUpperCase() || "ACTIVE"}</span>
               </div>
               <div className="debit-logo-icon">
                 <Icon name="users" size={20} />
@@ -210,31 +153,6 @@ export default function DashboardOverview({ user }) {
           </div>
         </div>
 
-        {/* Payout Countdown */}
-        <div className="payout-countdown-card">
-          <div className="payout-card-bg">
-            <div className="payout-stripe payout-stripe-1"></div>
-            <div className="payout-stripe payout-stripe-2"></div>
-          </div>
-          <div className="payout-card-content">
-            <div className="payout-card-header">
-              <Icon name="clock" size={20} />
-              <span>Next Group Payout</span>
-            </div>
-            <div className="countdown-display">
-              <div className="countdown-number">{daysUntilNext !== null ? daysUntilNext : "--"}</div>
-              <div className="countdown-label">days remaining</div>
-            </div>
-            <div className="payout-card-footer">
-              <div className="payout-indicator">
-                <span className="pulse-dot"></span>
-                <span>CYCLE ACTIVE</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Recent Transactions */}
         <div className="transactions-card">
           <div className="card-header">
             <h3><Icon name="receipt" size={20} /> Transaction History</h3>
@@ -264,19 +182,18 @@ export default function DashboardOverview({ user }) {
             )}
           </div>
         </div>
-      </div>
 
-      {/* Bottom Row */}
-      <div className="dashboard-bottom-row">
-        {/* Upcoming Payouts */}
         <div className="upcoming-payouts-card">
           <div className="card-header">
             <h3><Icon name="users" size={20} /> Upcoming Payouts</h3>
           </div>
           <div className="upcoming-list">
             {upcomingPayouts.length > 0 ? (
-              upcomingPayouts.map((p, index) => (
-                <div className={`upcoming-item ${p.member_id === user?.id ? 'upcoming-item--me' : ''}`} key={p.id}>
+              upcomingPayouts.map((p) => (
+                <div
+                  className={`upcoming-item ${p.member_id === user?.id ? "upcoming-item--me" : ""}`}
+                  key={p.id}
+                >
                   <div className="upcoming-rank">#{p.cycle_number}</div>
                   <div className="upcoming-info">
                     <span className="upcoming-name">
@@ -293,7 +210,6 @@ export default function DashboardOverview({ user }) {
           </div>
         </div>
 
-        {/* IGA Projects */}
         <div className="projects-overview-card">
           <div className="card-header">
             <h3><Icon name="briefcase" size={20} /> IGA Projects</h3>
@@ -302,11 +218,13 @@ export default function DashboardOverview({ user }) {
             {projects.length > 0 ? (
               projects.map((project) => (
                 <div className="project-mini-card" key={project.id}>
-                  <div className={`project-mini-icon ${project.status === 'active' ? 'active' : 'dev'}`}>
-                    {project.name.includes('Poultry') ? '🐔' : '🥜'}
+                  <div
+                    className={`project-mini-icon ${project.status === "active" ? "active" : "dev"}`}
+                  >
+                    {project.name.includes("Poultry") ? "🐔" : "🥜"}
                   </div>
                   <div className="project-mini-info">
-                    <span className="project-mini-name">{project.name.split('–')[0].trim()}</span>
+                    <span className="project-mini-name">{project.name.split("–")[0].trim()}</span>
                     <span className={`project-mini-status ${project.status}`}>{project.status}</span>
                   </div>
                 </div>

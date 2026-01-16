@@ -461,6 +461,8 @@ export default function ExpensesPage({ user }) {
     setExpenseForm(initialExpenseForm);
     setEditingExpenseId(null);
     setShowExpenseForm(false);
+    setExpandedExpenseId(null);
+    resetMessages();
   };
 
   const handleNewExpense = () => {
@@ -530,6 +532,28 @@ export default function ExpensesPage({ user }) {
           </div>
         </div>
       )}
+
+      <div className="expense-mobile-tabs" role="tablist" aria-label="Expense views">
+        <button
+          type="button"
+          role="tab"
+          className={`expense-mobile-tab${showExpenseForm ? " is-active" : ""}`}
+          onClick={handleNewExpense}
+          disabled={!selectedProjectId}
+          aria-selected={showExpenseForm}
+        >
+          Expense
+        </button>
+        <button
+          type="button"
+          role="tab"
+          className={`expense-mobile-tab${!showExpenseForm ? " is-active" : ""}`}
+          onClick={handleExpenseCancel}
+          aria-selected={!showExpenseForm}
+        >
+          History
+        </button>
+      </div>
 
       <div className={`jpp-tab-grid expense-grid${showExpenseForm ? "" : " is-collapsed"}`}>
         {showExpenseForm && (
@@ -635,7 +659,11 @@ export default function ExpensesPage({ user }) {
           </div>
         )}
 
-        <div className={`admin-card expense-history-card${showExpenseForm ? "" : " is-full"}`}>
+        <div
+          className={`admin-card expense-history-card${
+            showExpenseForm ? " is-form-open" : " is-full"
+          }`}
+        >
           <div className="section-header expense-section-header">
             <h3>
               <Icon name="receipt" size={18} /> Expense History

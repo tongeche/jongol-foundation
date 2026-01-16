@@ -236,6 +236,38 @@ export const Icon = ({ name, size = 18, className = "" }) => {
           <circle cx="12" cy="12" r="1" />
         </svg>
       );
+    case "tag":
+      return (
+        <svg {...common} aria-hidden="true">
+          <path d="M20 10.5L11.5 2H4a2 2 0 0 0-2 2v7.5l8.5 8.5a2 2 0 0 0 2.8 0L20 13.3a2 2 0 0 0 0-2.8z" />
+          <circle cx="7" cy="7" r="1.5" />
+        </svg>
+      );
+    case "feather":
+      return (
+        <svg {...common} aria-hidden="true">
+          <path d="M20.24 12.24a6 6 0 0 0-8.49-8.49L4 11.5V20h8.5z" />
+          <line x1="16" y1="8" x2="2" y2="22" />
+          <line x1="17.5" y1="15" x2="9" y2="15" />
+        </svg>
+      );
+    case "truck":
+      return (
+        <svg {...common} aria-hidden="true">
+          <rect x="1" y="3" width="15" height="13" />
+          <polygon points="16 8 20 8 23 11 23 16 16 16 16 8" />
+          <circle cx="5.5" cy="18.5" r="2.5" />
+          <circle cx="18.5" cy="18.5" r="2.5" />
+        </svg>
+      );
+    case "layers":
+      return (
+        <svg {...common} aria-hidden="true">
+          <polygon points="12 2 2 7 12 12 22 7 12 2" />
+          <polyline points="2 12 12 17 22 12" />
+          <polyline points="2 17 12 22 22 17" />
+        </svg>
+      );
     case "alert":
       return (
         <svg {...common} aria-hidden="true">

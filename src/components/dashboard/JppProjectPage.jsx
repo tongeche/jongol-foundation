@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../icons.jsx";
 import {
   createJppBatch,
+  createJppBird,
   createJppDailyLog,
   createJppWeeklyGrowth,
   deleteJppBatch,
@@ -9,11 +10,14 @@ import {
   deleteJppWeeklyGrowth,
   getJppBatchKpis,
   getJppBatches,
+  getJppBirds,
   getJppDailyLogs,
   getJppExpenses,
   getJppWeeklyGrowth,
   createProjectExpenseItem,
+  getProjectProducts,
   getProjectExpenseItems,
+  uploadBirdPhoto,
   updateProjectExpenseItem,
   updateJppBatch,
   updateJppDailyLog,
@@ -28,6 +32,36 @@ const deathCauseOptions = [
   { value: "P", label: "Predator" },
   { value: "I", label: "Injury" },
   { value: "S", label: "Stress" },
+];
+
+const birdSexOptions = [
+  { value: "unknown", label: "Unknown" },
+  { value: "male", label: "Male" },
+  { value: "female", label: "Female" },
+];
+
+const birdSourceOptions = [
+  { value: "bought", label: "Bought" },
+  { value: "hatched", label: "Hatched" },
+  { value: "donated", label: "Donated" },
+  { value: "transferred", label: "Transferred" },
+];
+
+const birdStatusOptions = [
+  { value: "alive", label: "Alive" },
+  { value: "sold", label: "Sold" },
+  { value: "culled", label: "Culled" },
+  { value: "dead", label: "Dead" },
+  { value: "missing", label: "Missing" },
+];
+
+const birdAgeStageOptions = [
+  { value: "unknown", label: "Unknown" },
+  { value: "chick", label: "Chick" },
+  { value: "pullet", label: "Pullet" },
+  { value: "cockerel", label: "Cockerel" },
+  { value: "hen", label: "Hen" },
+  { value: "rooster", label: "Rooster" },
 ];
 
 const dailyChecklistItems = ["Water", "Feed AM", "Feed PM", "Temp OK"];
@@ -96,11 +130,32 @@ export default function JppProjectPage({ user }) {
     notes: "",
   };
 
+  const initialBirdForm = {
+    product_id: "",
+    batch_id: "",
+    tag_id: "",
+    bird_name: "",
+    sex: "unknown",
+    breed_label: "unknown",
+    color_label: "",
+    pattern_label: "",
+    age_stage: "unknown",
+    hatch_date: "",
+    acquired_date: today,
+    acquired_source: "bought",
+    status: "alive",
+    status_date: today,
+    description: "",
+    notes: "",
+  };
+
   const [activeTab, setActiveTab] = useState("overview");
   const [batches, setBatches] = useState([]);
   const [kpis, setKpis] = useState([]);
   const [dailyLogs, setDailyLogs] = useState([]);
   const [weeklyGrowth, setWeeklyGrowth] = useState([]);
+  const [birds, setBirds] = useState([]);
+  const [birdProducts, setBirdProducts] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [expenseItems, setExpenseItems] = useState([]);
   const [expenseItemEdits, setExpenseItemEdits] = useState({});
@@ -116,6 +171,13 @@ export default function JppProjectPage({ user }) {
   const [batchForm, setBatchForm] = useState(initialBatchForm);
   const [dailyForm, setDailyForm] = useState(initialDailyForm);
   const [weeklyForm, setWeeklyForm] = useState(initialWeeklyForm);
+  const [birdForm, setBirdForm] = useState(initialBirdForm);
+  const [birdPhoto, setBirdPhoto] = useState(null);
+  const [birdPhotoPreview, setBirdPhotoPreview] = useState("");
+  const [birdPhotoKey, setBirdPhotoKey] = useState(0);
+  const [savingBird, setSavingBird] = useState(false);
+  const [showBirdFormMobile, setShowBirdFormMobile] = useState(false);
+  const birdFormRef = useRef(null);
 
   const [editingBatchId, setEditingBatchId] = useState(null);
   const [editingDailyId, setEditingDailyId] = useState(null);
@@ -155,9 +217,20 @@ export default function JppProjectPage({ user }) {
         getJppWeeklyGrowth(),
         getJppExpenses(),
         getProjectExpenseItems("JPP"),
+        getProjectProducts("JPP", { trackingMode: "individual" }),
+        getJppBirds(),
       ]);
 
-      const [batchRes, kpiRes, dailyRes, weeklyRes, expenseRes, expenseItemsRes] = results;
+      const [
+        batchRes,
+        kpiRes,
+        dailyRes,
+        weeklyRes,
+        expenseRes,
+        expenseItemsRes,
+        birdProductsRes,
+        birdsRes,
+      ] = results;
 
       const safeBatches = batchRes.status === "fulfilled" ? batchRes.value || [] : [];
       const safeKpis = kpiRes.status === "fulfilled" ? kpiRes.value || [] : [];
@@ -166,6 +239,9 @@ export default function JppProjectPage({ user }) {
       const safeExpenses = expenseRes.status === "fulfilled" ? expenseRes.value || [] : [];
       const safeExpenseItems =
         expenseItemsRes.status === "fulfilled" ? expenseItemsRes.value || [] : [];
+      const safeBirdProducts =
+        birdProductsRes.status === "fulfilled" ? birdProductsRes.value || [] : [];
+      const safeBirds = birdsRes.status === "fulfilled" ? birdsRes.value || [] : [];
 
       const errors = results
         .filter((res) => res.status === "rejected")
@@ -175,6 +251,8 @@ export default function JppProjectPage({ user }) {
       setKpis(safeKpis);
       setDailyLogs(safeDaily);
       setWeeklyGrowth(safeWeekly);
+      setBirdProducts(safeBirdProducts);
+      setBirds(safeBirds);
       setExpenses(safeExpenses);
       setExpenseItems(safeExpenseItems);
       setModuleCounts({
@@ -224,9 +302,35 @@ export default function JppProjectPage({ user }) {
     };
   }, []);
 
+  useEffect(() => {
+    if (!birdPhoto) {
+      setBirdPhotoPreview("");
+      return undefined;
+    }
+    const previewUrl = URL.createObjectURL(birdPhoto);
+    setBirdPhotoPreview(previewUrl);
+    return () => {
+      URL.revokeObjectURL(previewUrl);
+    };
+  }, [birdPhoto]);
+
+  useEffect(() => {
+    if (birdProducts.length === 0) {
+      return;
+    }
+    const selectionExists = birdProducts.some((product) => product.id === birdForm.product_id);
+    if (!selectionExists) {
+      setBirdForm((prev) => ({ ...prev, product_id: birdProducts[0].id }));
+    }
+  }, [birdProducts, birdForm.product_id]);
+
   const batchLookup = useMemo(() => {
     return new Map(batches.map((batch) => [String(batch.id), batch]));
   }, [batches]);
+
+  const birdProductLookup = useMemo(() => {
+    return new Map(birdProducts.map((product) => [product.id, product]));
+  }, [birdProducts]);
 
   const selectedBatch = useMemo(() => {
     if (!selectedBatchId) {
@@ -274,6 +378,13 @@ export default function JppProjectPage({ user }) {
     const batch = batchLookup.get(String(batchId));
     if (!batch) return "Unknown";
     return batch.batch_code || batch.batch_name || "Batch";
+  };
+
+  const getBirdProductLabel = (productId) => {
+    if (!productId) return "Unknown";
+    const product = birdProductLookup.get(productId);
+    if (!product) return "Unknown";
+    return product.name || "Product";
   };
 
   const parseRequiredInteger = (value) => {
@@ -377,6 +488,30 @@ export default function JppProjectPage({ user }) {
     const { name, value, type, checked } = event.target;
     setWeeklyForm((prev) => ({ ...prev, [name]: type === "checkbox" ? checked : value }));
     resetMessages();
+  };
+
+  const handleBirdChange = (event) => {
+    const { name, value } = event.target;
+    setBirdForm((prev) => ({ ...prev, [name]: value }));
+    resetMessages();
+  };
+
+  const handleBirdPhotoChange = (event) => {
+    const file = event.target.files?.[0] || null;
+    setBirdPhoto(file);
+  };
+
+  const openBirdFormMobile = () => {
+    setShowBirdFormMobile(true);
+    if (typeof window !== "undefined") {
+      setTimeout(() => {
+        birdFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 0);
+    }
+  };
+
+  const closeBirdFormMobile = () => {
+    setShowBirdFormMobile(false);
   };
 
   const handleBatchSelect = (event) => {
@@ -658,6 +793,72 @@ export default function JppProjectPage({ user }) {
     }
   };
 
+  const handleBirdSubmit = async (event) => {
+    event.preventDefault();
+    resetMessages();
+
+    if (!birdForm.product_id) {
+      setErrorMessage("Select a bird product.");
+      return;
+    }
+
+    if (!birdForm.acquired_date) {
+      setErrorMessage("Acquired date is required.");
+      return;
+    }
+
+    setSavingBird(true);
+
+    try {
+      let photoPath = null;
+      if (birdPhoto) {
+        const upload = await uploadBirdPhoto(birdPhoto, { folder: "jpp" });
+        photoPath = upload?.path || upload?.publicUrl || null;
+      }
+
+      const payload = {
+        product_id: birdForm.product_id,
+        batch_id: normalizeOptional(birdForm.batch_id),
+        tag_id: normalizeOptional(birdForm.tag_id),
+        bird_name: normalizeOptional(birdForm.bird_name),
+        sex: birdForm.sex || "unknown",
+        breed_label: normalizeOptional(birdForm.breed_label) || "unknown",
+        color_label: normalizeOptional(birdForm.color_label),
+        pattern_label: normalizeOptional(birdForm.pattern_label),
+        age_stage: birdForm.age_stage || "unknown",
+        hatch_date: normalizeOptional(birdForm.hatch_date),
+        acquired_date: birdForm.acquired_date,
+        acquired_source: birdForm.acquired_source || "bought",
+        status: birdForm.status || "alive",
+        status_date: birdForm.status_date || birdForm.acquired_date,
+        photo_url: photoPath,
+        notes: normalizeOptional(birdForm.notes),
+        description: normalizeOptional(birdForm.description),
+      };
+
+      await createJppBird(payload);
+      const resetDate = new Date().toISOString().slice(0, 10);
+      const fallbackProductId = birdForm.product_id || birdProducts[0]?.id || "";
+      setBirdForm({
+        ...initialBirdForm,
+        product_id: fallbackProductId,
+        acquired_date: resetDate,
+        status_date: resetDate,
+      });
+      setBirdPhoto(null);
+      setBirdPhotoPreview("");
+      setBirdPhotoKey((value) => value + 1);
+      setStatusMessage("Bird added.");
+      setShowBirdFormMobile(false);
+      await loadJppData(false);
+    } catch (error) {
+      console.error("Error saving bird:", error);
+      setErrorMessage(error.message || "Failed to save bird.");
+    } finally {
+      setSavingBird(false);
+    }
+  };
+
   const handleBatchEdit = (batch) => {
     setBatchForm({
       ...initialBatchForm,
@@ -849,6 +1050,14 @@ export default function JppProjectPage({ user }) {
           <Icon name="calendar" size={16} />
           Weekly Growth
         </button>
+        <button
+          className={`jpp-tab ${activeTab === "birds" ? "active" : ""}`}
+          onClick={() => setActiveTab("birds")}
+          type="button"
+        >
+          <Icon name="users" size={16} />
+          Birds
+        </button>
         {canManage && (
           <button
             className={`jpp-tab ${activeTab === "downloads" ? "active" : ""}`}
@@ -863,180 +1072,40 @@ export default function JppProjectPage({ user }) {
 
       {activeTab === "overview" && (
         <>
-          <div className="jpp-summary-grid">
-            <div className="jpp-summary-card">
-              <div className="jpp-summary-top">
-                <span>Batches</span>
-                <Icon name="folder" size={16} />
+          <div className="jpp-modern-summary-grid">
+            <div className="jpp-modern-card batches">
+              <div className="jpp-modern-icon" style={{background: 'linear-gradient(135deg, #60a5fa, #3b82f6)'}}>
+                <Icon name="folder" size={28} />
               </div>
-              <div className="jpp-summary-value">{formatNumber(batches.length)}</div>
-              <div className="jpp-summary-sub">
-                Latest start {latestStartDate ? formatDate(latestStartDate) : "N/A"}
+              <div className="jpp-modern-content">
+                <span className="jpp-modern-label">Batches</span>
+                <span className="jpp-modern-value">{formatNumber(batches.length)}</span>
+                <span className="jpp-modern-sub">Latest start: {latestStartDate ? formatDate(latestStartDate) : "N/A"}</span>
               </div>
             </div>
-            <div className="jpp-summary-card">
-              <div className="jpp-summary-top">
-                <span>Estimated Alive</span>
-                <Icon name="heart" size={16} />
+            <div className="jpp-modern-card alive">
+              <div className="jpp-modern-icon" style={{background: 'linear-gradient(135deg, #10b981, #059669)'}}>
+                <span role="img" aria-label="chicken">🐔</span>
               </div>
-              <div className="jpp-summary-value">{formatNumber(totals.alive)}</div>
-              <div className="jpp-summary-sub">Mortality {formatPercent(mortalityPct)}</div>
+              <div className="jpp-modern-content">
+                <span className="jpp-modern-label">Alive</span>
+                <span className="jpp-modern-value">{formatNumber(totals.alive)}</span>
+                <span className="jpp-modern-sub">Mortality: <span style={{color:'#ef4444'}}>{formatPercent(mortalityPct)}</span></span>
+              </div>
             </div>
-            <div className="jpp-summary-card">
-              <div className="jpp-summary-top">
-                <span>Total Feed</span>
-                <Icon name="trending-up" size={16} />
+            <div className="jpp-modern-card feed">
+              <div className="jpp-modern-icon" style={{background: 'linear-gradient(135deg, #fbbf24, #f59e0b)'}}>
+                <span role="img" aria-label="feed">🌾</span>
               </div>
-              <div className="jpp-summary-value">{formatKg(totals.feed)}</div>
-              <div className="jpp-summary-sub">From daily logs</div>
-            </div>
-            <div className="jpp-summary-card">
-              <div className="jpp-summary-top">
-                <span>Total Spend</span>
-                <Icon name="wallet" size={16} />
+              <div className="jpp-modern-content">
+                <span className="jpp-modern-label">Total Feed</span>
+                <span className="jpp-modern-value">{formatKg(totals.feed)}</span>
+                <span className="jpp-modern-sub">From daily logs</span>
               </div>
-              <div className="jpp-summary-value">{formatCurrency(totals.spend)}</div>
-              <div className="jpp-summary-sub">Daily logs and expenses</div>
             </div>
           </div>
 
-          <div className="jpp-ops-grid">
-            <div className="jpp-op-card">
-              <div className="jpp-op-header">
-                <Icon name="check-circle" size={16} />
-                <h3>Daily Logs</h3>
-              </div>
-              <div className="jpp-op-value">{formatNumber(moduleCounts.dailyLogs)}</div>
-              <div className="jpp-op-sub">entries recorded</div>
-            </div>
-            <div className="jpp-op-card">
-              <div className="jpp-op-header">
-                <Icon name="calendar" size={16} />
-                <h3>Weekly Growth</h3>
-              </div>
-              <div className="jpp-op-value">{formatNumber(moduleCounts.weeklyGrowth)}</div>
-              <div className="jpp-op-sub">weekly check-ins</div>
-            </div>
-            <div className="jpp-op-card">
-              <div className="jpp-op-header">
-                <Icon name="receipt" size={16} />
-                <h3>Expenses</h3>
-              </div>
-              <div className="jpp-op-value">{formatNumber(moduleCounts.expenses)}</div>
-              <div className="jpp-op-sub">logged spends</div>
-            </div>
-          </div>
 
-          <section className="jpp-section">
-            <div className="section-header">
-              <h3>
-                <Icon name="briefcase" size={18} /> Batch KPIs
-              </h3>
-            </div>
-            {kpis.length === 0 ? (
-              <div className="empty-state">
-                <Icon name="folder" size={40} />
-                <h3>No batch KPIs yet</h3>
-                <p>Batch summaries will appear once daily logs and expenses are recorded.</p>
-              </div>
-            ) : (
-              <div className="jpp-kpi-grid">
-                {kpis.map((kpi) => (
-                  <div className="jpp-kpi-card" key={kpi.batch_code || kpi.batch_name}>
-                    <div className="jpp-kpi-header">
-                      <div>
-                        <h4>{kpi.batch_name || kpi.batch_code}</h4>
-                        <span className="jpp-kpi-code">{kpi.batch_code}</span>
-                      </div>
-                      <span className="jpp-kpi-date">Started {formatDate(kpi.start_date)}</span>
-                    </div>
-                    <div className="jpp-kpi-metrics">
-                      <div className="jpp-kpi-metric">
-                        <span className="jpp-kpi-label">Starting</span>
-                        <span className="jpp-kpi-value">{formatNumber(kpi.starting_count)}</span>
-                      </div>
-                      <div className="jpp-kpi-metric">
-                        <span className="jpp-kpi-label">Deaths</span>
-                        <span className="jpp-kpi-value">{formatNumber(kpi.total_deaths)}</span>
-                      </div>
-                      <div className="jpp-kpi-metric">
-                        <span className="jpp-kpi-label">Alive</span>
-                        <span className="jpp-kpi-value">
-                          {formatNumber(kpi.estimated_alive_now)}
-                        </span>
-                      </div>
-                      <div className="jpp-kpi-metric">
-                        <span className="jpp-kpi-label">Mortality</span>
-                        <span className="jpp-kpi-value">
-                          {formatPercent(kpi.mortality_pct)}
-                        </span>
-                      </div>
-                      <div className="jpp-kpi-metric">
-                        <span className="jpp-kpi-label">Feed Used</span>
-                        <span className="jpp-kpi-value">{formatKg(kpi.total_feed_kg)}</span>
-                      </div>
-                      <div className="jpp-kpi-metric">
-                        <span className="jpp-kpi-label">Total Spend</span>
-                        <span className="jpp-kpi-value">{formatCurrency(kpi.total_spend)}</span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-
-          <section className="jpp-section jpp-table-section">
-            <div className="section-header">
-              <h3>
-                <Icon name="folder" size={18} /> Batch Details
-              </h3>
-            </div>
-            {batches.length === 0 ? (
-              <div className="empty-state">
-                <Icon name="folder" size={40} />
-                <h3>No batches yet</h3>
-                <p>Create a batch to start logging daily activity.</p>
-              </div>
-            ) : (
-              <div className="jpp-table-wrap">
-                <table className="jpp-table">
-                  <thead>
-                    <tr>
-                      <th>Batch</th>
-                      <th>Start Date</th>
-                      <th>Bird Type</th>
-                      <th>Starting Count</th>
-                      <th>Feed on Hand</th>
-                      <th>Supplier</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {batches.map((batch) => (
-                      <tr key={batch.id || batch.batch_code}>
-                        <td>
-                          <div className="jpp-batch-name">
-                            <span className="jpp-batch-code">{batch.batch_code || "N/A"}</span>
-                            <span className="jpp-batch-sub">
-                              {batch.batch_name || "Unnamed batch"}
-                            </span>
-                          </div>
-                        </td>
-                        <td>{formatDate(batch.start_date)}</td>
-                        <td>
-                          {batch.bird_type || "N/A"}
-                          {batch.breed ? ` - ${batch.breed}` : ""}
-                        </td>
-                        <td>{formatNumber(batch.starting_count)}</td>
-                        <td>{formatKg(batch.feed_on_hand_kg)}</td>
-                        <td>{batch.supplier_name || "N/A"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
         </>
       )}
 
@@ -2206,6 +2275,552 @@ export default function JppProjectPage({ user }) {
                   </tbody>
                 </table>
               </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === "birds" && (
+        <div className="jpp-tab-grid">
+          <div
+            className={`admin-card jpp-bird-form-card ${showBirdFormMobile ? "is-open" : ""}`}
+            ref={birdFormRef}
+          >
+            <div className="section-header jpp-bird-form-header">
+              <h3>
+                <Icon name="users" size={18} /> Temp Bird Intake
+              </h3>
+              <button
+                type="button"
+                className="jpp-bird-form-toggle"
+                onClick={showBirdFormMobile ? closeBirdFormMobile : openBirdFormMobile}
+              >
+                {showBirdFormMobile ? "Hide form" : "Add bird"}
+              </button>
+            </div>
+            <p className="admin-help">
+              Uploads go to the `birds` bucket. Add one bird at a time for now.
+            </p>
+            {birdProducts.length === 0 ? (
+              <div className="empty-state">
+                <Icon name="folder" size={40} />
+                <h3>No bird products yet</h3>
+                <p>Create a JPP product with tracking mode "individual" to start adding birds.</p>
+              </div>
+            ) : (
+              <form className="admin-form" onSubmit={handleBirdSubmit}>
+                <div className="admin-form-grid">
+                  <div className="admin-form-field">
+                    <label>Product *</label>
+                    <select
+                      name="product_id"
+                      value={birdForm.product_id}
+                      onChange={handleBirdChange}
+                      required
+                    >
+                      <option value="">Select product</option>
+                      {birdProducts.map((product) => (
+                        <option key={product.id} value={product.id}>
+                          {product.name}
+                          {product.category ? ` (${product.category})` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Batch (Optional)</label>
+                    <select name="batch_id" value={birdForm.batch_id} onChange={handleBirdChange}>
+                      <option value="">Unassigned</option>
+                      {batches.map((batch) => (
+                        <option key={batch.id} value={String(batch.id)}>
+                          {batch.batch_code || batch.batch_name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Tag ID</label>
+                    <input
+                      name="tag_id"
+                      value={birdForm.tag_id}
+                      onChange={handleBirdChange}
+                      placeholder="JPP-001"
+                    />
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Bird Name</label>
+                    <input
+                      name="bird_name"
+                      value={birdForm.bird_name}
+                      onChange={handleBirdChange}
+                      placeholder="Layer 1"
+                    />
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Sex</label>
+                    <select name="sex" value={birdForm.sex} onChange={handleBirdChange}>
+                      {birdSexOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Breed Label</label>
+                    <input
+                      name="breed_label"
+                      value={birdForm.breed_label}
+                      onChange={handleBirdChange}
+                      placeholder="Kienyeji"
+                    />
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Age Stage</label>
+                    <select
+                      name="age_stage"
+                      value={birdForm.age_stage}
+                      onChange={handleBirdChange}
+                    >
+                      {birdAgeStageOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Color</label>
+                    <input
+                      name="color_label"
+                      value={birdForm.color_label}
+                      onChange={handleBirdChange}
+                      placeholder="Brown"
+                    />
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Pattern</label>
+                    <input
+                      name="pattern_label"
+                      value={birdForm.pattern_label}
+                      onChange={handleBirdChange}
+                      placeholder="Speckled"
+                    />
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Hatch Date</label>
+                    <input
+                      type="date"
+                      name="hatch_date"
+                      value={birdForm.hatch_date}
+                      onChange={handleBirdChange}
+                    />
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Acquired Date *</label>
+                    <input
+                      type="date"
+                      name="acquired_date"
+                      value={birdForm.acquired_date}
+                      onChange={handleBirdChange}
+                      required
+                    />
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Source</label>
+                    <select
+                      name="acquired_source"
+                      value={birdForm.acquired_source}
+                      onChange={handleBirdChange}
+                    >
+                      {birdSourceOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Status</label>
+                    <select name="status" value={birdForm.status} onChange={handleBirdChange}>
+                      {birdStatusOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Status Date</label>
+                    <input
+                      type="date"
+                      name="status_date"
+                      value={birdForm.status_date}
+                      onChange={handleBirdChange}
+                    />
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Photo</label>
+                    <input
+                      key={birdPhotoKey}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleBirdPhotoChange}
+                    />
+                  </div>
+                  {birdPhotoPreview && (
+                    <div className="admin-form-field admin-form-field--full">
+                      <label>Photo Preview</label>
+                      <img
+                        src={birdPhotoPreview}
+                        alt="Bird preview"
+                        style={{
+                          maxWidth: "220px",
+                          borderRadius: "12px",
+                          border: "1px solid #e5e7eb",
+                        }}
+                      />
+                    </div>
+                  )}
+                  <div className="admin-form-field admin-form-field--full">
+                    <label>Description</label>
+                    <textarea
+                      name="description"
+                      value={birdForm.description}
+                      onChange={handleBirdChange}
+                      rows={3}
+                    />
+                  </div>
+                  <div className="admin-form-field admin-form-field--full">
+                    <label>Notes</label>
+                    <textarea
+                      name="notes"
+                      value={birdForm.notes}
+                      onChange={handleBirdChange}
+                      rows={3}
+                    />
+                  </div>
+                </div>
+                <div className="admin-form-actions">
+                  <button className="btn-primary" type="submit" disabled={savingBird}>
+                    {savingBird ? "Saving..." : "Add Bird"}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+
+          <div className="admin-card">
+            <div className="section-header">
+              <h3>
+                <Icon name="folder" size={18} /> Recent Birds
+              </h3>
+            </div>
+            {birds.length === 0 ? (
+              <div className="empty-state">
+                <Icon name="folder" size={40} />
+                <h3>No birds recorded yet</h3>
+                <p>Add the first bird to start tracking.</p>
+              </div>
+            ) : (
+              <>
+                <div className="jpp-birds-mobile">
+                  <div className="jpp-birds-mobile-swiper">
+                    {birds.map((bird) => {
+                      const displayTag = bird.tag_id || String(bird.id || "").slice(0, 8);
+                      const birdTitle = bird.bird_name || displayTag;
+                      const productLabel = getBirdProductLabel(bird.product_id);
+                      const batchLabel = getBatchLabel(bird.batch_id);
+                      const ageStageLabel =
+                        bird.age_stage && bird.age_stage !== "unknown" ? bird.age_stage : null;
+                      const colorPattern = [bird.color_label, bird.pattern_label]
+                        .filter(Boolean)
+                        .join(" / ");
+                      const categoryPrimary = ageStageLabel || bird.breed_label || "General";
+                      const categorySecondary = colorPattern || bird.acquired_source || "Standard";
+                      const detailItems = [
+                        { label: "Tag", value: displayTag, icon: "tag", tone: "teal" },
+                        {
+                          label: "Breed",
+                          value: bird.breed_label || "Unknown",
+                          icon: "feather",
+                          tone: "mint",
+                        },
+                        {
+                          label: "Source",
+                          value: bird.acquired_source || "Unknown",
+                          icon: "truck",
+                          tone: "amber",
+                        },
+                        {
+                          label: "Acquired",
+                          value: formatDate(bird.acquired_date),
+                          icon: "calendar",
+                          tone: "sky",
+                        },
+                        {
+                          label: "Status Date",
+                          value: formatDate(bird.status_date),
+                          icon: "clock",
+                          tone: "slate",
+                        },
+                        { label: "Batch", value: batchLabel, icon: "layers", tone: "lime" },
+                      ];
+                      const dailyCount = bird.daily_alive_count ?? bird.daily_bird_count ?? null;
+                      const lastLogLabel = bird.last_log_date
+                        ? formatDate(bird.last_log_date)
+                        : "No daily log";
+                      const lastWeekLabel = bird.last_week_ending
+                        ? formatDate(bird.last_week_ending)
+                        : "No weekly log";
+                      const dailyMetrics = [
+                        { label: "Birds counted", value: formatOptional(dailyCount, formatNumber) },
+                        {
+                          label: "Feed",
+                          value: formatOptional(bird.feed_per_bird_kg, formatKg),
+                        },
+                        {
+                          label: "Water refills",
+                          value: formatOptional(bird.water_refills_per_bird, formatNumber),
+                        },
+                        {
+                          label: "Eggs",
+                          value: formatOptional(bird.eggs_per_bird, formatNumber),
+                        },
+                        {
+                          label: "Spend",
+                          value: formatOptional(bird.spend_per_bird, formatCurrency),
+                        },
+                      ];
+                      const weeklyMetrics = [
+                        {
+                          label: "Birds counted",
+                          value: formatOptional(bird.weekly_bird_count, formatNumber),
+                        },
+                        {
+                          label: "Feed",
+                          value: formatOptional(bird.feed_per_bird_week_kg, formatKg),
+                        },
+                        {
+                          label: "Sold share",
+                          value: formatOptional(bird.birds_sold_per_bird, formatNumber),
+                        },
+                        {
+                          label: "Culled share",
+                          value: formatOptional(bird.birds_culled_per_bird, formatNumber),
+                        },
+                      ];
+                      const bio =
+                        bird.description?.trim() ||
+                        bird.notes?.trim() ||
+                        "JPP bird profile for tracking health, growth, and status updates.";
+
+                      return (
+                        <article className="jpp-bird-card" key={bird.id}>
+                          <div className="jpp-bird-hero">
+                            {bird.photo_url ? (
+                              <img
+                                src={bird.photo_url}
+                                alt={`Bird ${displayTag}`}
+                                loading="lazy"
+                              />
+                            ) : (
+                              <div className="jpp-bird-hero-placeholder">
+                                <span>No photo</span>
+                              </div>
+                            )}
+                            <div className="jpp-bird-hero-badges">
+                              <span className={`jpp-bird-chip status-${bird.status || "unknown"}`}>
+                                {bird.status || "unknown"}
+                              </span>
+                              <span className="jpp-bird-chip chip-light">
+                                {bird.sex || "unknown"}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              className="jpp-bird-hero-action"
+                              onClick={showBirdFormMobile ? closeBirdFormMobile : openBirdFormMobile}
+                              aria-label="Add bird"
+                            >
+                              <Icon name="plus" size={16} />
+                            </button>
+                          </div>
+                          <div className="jpp-bird-card-body">
+                            <div className="jpp-bird-header">
+                              <h4>{birdTitle}</h4>
+                              <p className="jpp-bird-meta">
+                                <span>{productLabel}</span>
+                                <span className="jpp-bird-meta-dot">•</span>
+                                <span>{batchLabel}</span>
+                              </p>
+                            </div>
+                            <div className="jpp-bird-feature-grid">
+                              <div className="jpp-bird-feature">
+                                <span className="jpp-bird-feature-icon" aria-hidden="true"></span>
+                                <div>
+                                  <span className="jpp-bird-feature-title">{categoryPrimary}</span>
+                                  <span className="jpp-bird-feature-sub">Age Stage</span>
+                                </div>
+                              </div>
+                              <div className="jpp-bird-feature">
+                                <span className="jpp-bird-feature-icon" aria-hidden="true"></span>
+                                <div>
+                                  <span className="jpp-bird-feature-title">{categorySecondary}</span>
+                                  <span className="jpp-bird-feature-sub">Color / Pattern</span>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="jpp-bird-info-grid">
+                              {detailItems.map((item) => (
+                                <div className="jpp-bird-info-item" key={item.label}>
+                                  <span className={`jpp-bird-info-icon tone-${item.tone}`}>
+                                    <Icon name={item.icon} size={16} />
+                                  </span>
+                                  <div className="jpp-bird-info-text">
+                                    <span className="jpp-bird-info-label">{item.label}</span>
+                                    <span className="jpp-bird-info-value">{item.value}</span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                            <p className="jpp-bird-bio">{bio}</p>
+                            <div className="jpp-bird-metrics">
+                              <div className="jpp-bird-metric-block">
+                                <span className="jpp-bird-metric-title">{lastLogLabel}</span>
+                                <div className="jpp-bird-metric-grid">
+                                  {dailyMetrics.map((metric) => (
+                                    <div className="jpp-bird-metric-item" key={metric.label}>
+                                      <span className="jpp-bird-metric-label">{metric.label}</span>
+                                      <span className="jpp-bird-metric-value">{metric.value}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                              <div className="jpp-bird-metric-block">
+                                <span className="jpp-bird-metric-title">
+                                  Latest Weekly • {lastWeekLabel}
+                                </span>
+                                <div className="jpp-bird-metric-grid">
+                                  {weeklyMetrics.map((metric) => (
+                                    <div className="jpp-bird-metric-item" key={metric.label}>
+                                      <span className="jpp-bird-metric-label">{metric.label}</span>
+                                      <span className="jpp-bird-metric-value">{metric.value}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="jpp-bird-action-grid">
+                              <button
+                                type="button"
+                                className="jpp-bird-action"
+                                onClick={openBirdFormMobile}
+                              >
+                                <Icon name="plus" size={16} />
+                                Add Bird
+                              </button>
+                              <button type="button" className="jpp-bird-action is-disabled" disabled>
+                                <Icon name="check-circle" size={16} />
+                                Health Tips
+                              </button>
+                              <button type="button" className="jpp-bird-action is-disabled" disabled>
+                                <Icon name="receipt" size={16} />
+                                Vaccination
+                              </button>
+                            </div>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="jpp-birds-table">
+                  <div className="jpp-birds-table-header">
+                    <span className="jpp-birds-count">
+                      1 - {Math.min(24, birds.length)} of {birds.length} birds
+                    </span>
+                    <div className="jpp-birds-view">
+                      <button type="button" className="jpp-birds-view-btn is-active">
+                        <Icon name="menu" size={16} />
+                      </button>
+                      <button type="button" className="jpp-birds-view-btn">
+                        <Icon name="folder" size={16} />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="jpp-table-wrap">
+                    <table className="jpp-table jpp-bird-table">
+                      <thead>
+                        <tr>
+                          <th>Bird</th>
+                          <th>Batch</th>
+                          <th>Status</th>
+                          <th>Acquired</th>
+                          <th>Status Date</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {birds.map((bird) => {
+                          const displayTag = bird.tag_id || String(bird.id || "").slice(0, 8);
+                          const birdTitle = bird.bird_name || displayTag;
+                          const productLabel = getBirdProductLabel(bird.product_id);
+                          const colorPattern = [bird.color_label, bird.pattern_label]
+                            .filter(Boolean)
+                            .join(" / ");
+                          const rowChips = [
+                            bird.age_stage && bird.age_stage !== "unknown" ? bird.age_stage : null,
+                            bird.sex && bird.sex !== "unknown" ? bird.sex : null,
+                            bird.breed_label || null,
+                            colorPattern || null,
+                          ].filter(Boolean);
+                          return (
+                            <tr key={bird.id}>
+                              <td>
+                                <div className="jpp-bird-row">
+                                  <div className="jpp-bird-row-thumb">
+                                    {bird.photo_url ? (
+                                      <img src={bird.photo_url} alt={displayTag} loading="lazy" />
+                                    ) : (
+                                      <div className="jpp-bird-row-thumb-placeholder">
+                                        <Icon name="users" size={14} />
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div className="jpp-bird-row-info">
+                                    <span className="jpp-bird-row-title">{birdTitle}</span>
+                                    <span className="jpp-bird-row-sub">
+                                      {productLabel} • {displayTag}
+                                    </span>
+                                    <div className="jpp-bird-row-chips">
+                                      {rowChips.map((chip, index) => (
+                                        <span
+                                          className="jpp-bird-row-chip"
+                                          key={`${chip}-${index}`}
+                                        >
+                                          {chip}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td>{getBatchLabel(bird.batch_id)}</td>
+                              <td>
+                                <span className={`jpp-bird-status status-${bird.status || "unknown"}`}>
+                                  {bird.status || "unknown"}
+                                </span>
+                              </td>
+                              <td>{formatDate(bird.acquired_date)}</td>
+                              <td>{formatDate(bird.status_date)}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>
             )}
           </div>
         </div>

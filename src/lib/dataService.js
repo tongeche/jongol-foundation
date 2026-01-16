@@ -788,6 +788,121 @@ export async function getJppWeeklyGrowth() {
 }
 
 /**
+ * Get JPP birds
+ */
+export async function getJppBirds() {
+  const mockBirds = [
+    {
+      id: "mock-bird-1",
+      product_id: "mock-jpp-birds",
+      batch_id: null,
+      tag_id: "JPP-001",
+      bird_name: "JPP-001",
+      sex: "female",
+      breed_label: "kienyeji",
+      hatch_date: "2026-02-01",
+      acquired_date: "2026-02-10",
+      acquired_source: "hatched",
+      status: "alive",
+      status_date: "2026-02-10",
+      photo_url: "",
+      notes: "",
+      description: "Healthy starter hen for growth tracking.",
+      color_label: "Brown",
+      pattern_label: "Speckled",
+      age_stage: "pullet",
+      last_log_date: "2026-02-20",
+      feed_per_bird_kg: 0.14,
+      water_refills_per_bird: 0.5,
+      eggs_per_bird: 0,
+      spend_per_bird: 32,
+      daily_bird_count: 7,
+      daily_alive_count: 7,
+      last_week_ending: "2026-02-23",
+      feed_per_bird_week_kg: 0.85,
+      birds_sold_per_bird: 0,
+      birds_culled_per_bird: 0,
+      weekly_bird_count: 7,
+    },
+  ];
+
+  if (!isSupabaseConfigured || !supabase) return mockBirds;
+
+  let { data, error } = await supabase
+    .from("v_jpp_bird_cards")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    const fallback = await supabase
+      .from("jpp_birds")
+      .select("*")
+      .order("created_at", { ascending: false });
+    if (fallback.error) {
+      console.error("Error fetching JPP birds:", fallback.error);
+      throw fallback.error;
+    }
+    data = fallback.data;
+  }
+
+  const rows = data || [];
+  const resolved = await Promise.all(
+    rows.map(async (bird) => {
+      if (!bird.photo_url) {
+        return bird;
+      }
+      const resolvedUrl = await resolveBirdPhotoUrl(bird.photo_url);
+      if (!resolvedUrl) {
+        return bird;
+      }
+      return { ...bird, photo_url: resolvedUrl };
+    })
+  );
+
+  return resolved;
+}
+
+async function resolveBirdPhotoUrl(value) {
+  if (!value || !isSupabaseConfigured || !supabase) {
+    return value;
+  }
+
+  const raw = String(value);
+  let path = raw;
+
+  if (raw.startsWith("http")) {
+    const publicMarker = "/storage/v1/object/public/birds/";
+    const signedMarker = "/storage/v1/object/sign/birds/";
+    if (raw.includes(publicMarker)) {
+      path = raw.split(publicMarker)[1];
+    } else if (raw.includes(signedMarker)) {
+      path = raw.split(signedMarker)[1];
+    } else {
+      return raw;
+    }
+
+    if (path.includes("?")) {
+      path = path.split("?")[0];
+    }
+  }
+
+  if (!path) {
+    return raw;
+  }
+
+  const { data: signedData, error: signedError } = await supabase.storage
+    .from("birds")
+    .createSignedUrl(path, 60 * 60);
+
+  if (!signedError && signedData?.signedUrl) {
+    return signedData.signedUrl;
+  }
+
+  const { data: publicData } = supabase.storage.from("birds").getPublicUrl(path);
+  return publicData?.publicUrl || raw;
+}
+
+/**
  * Get project expenses (by project code or id)
  */
 export async function getProjectExpenses(projectRef) {
@@ -926,6 +1041,58 @@ export async function getProjectSales(projectRef) {
 
   if (error) {
     console.error("Error fetching project sales:", error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+/**
+ * Get project products (by project code or id)
+ */
+export async function getProjectProducts(projectRef, options = {}) {
+  const mockProducts = [
+    {
+      id: "mock-jpp-birds",
+      name: "Live Birds",
+      category: "livestock",
+      tracking_mode: "individual",
+      unit: "birds",
+      is_active: true,
+    },
+    {
+      id: "mock-jpp-eggs",
+      name: "Eggs",
+      category: "eggs",
+      tracking_mode: "bulk",
+      unit: "trays",
+      is_active: true,
+    },
+  ];
+
+  if (!isSupabaseConfigured || !supabase) {
+    if (options.trackingMode) {
+      return mockProducts.filter((item) => item.tracking_mode === options.trackingMode);
+    }
+    return mockProducts;
+  }
+
+  const projectId = await resolveProjectId(projectRef);
+  let query = supabase
+    .from("project_products")
+    .select("id, name, category, tracking_mode, unit, is_active")
+    .eq("project_id", projectId)
+    .eq("is_active", true)
+    .order("name", { ascending: true });
+
+  if (options.trackingMode) {
+    query = query.eq("tracking_mode", options.trackingMode);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error("Error fetching project products:", error);
     throw error;
   }
 
@@ -1319,6 +1486,87 @@ export async function deleteJppWeeklyGrowth(entryId) {
   }
 
   return true;
+}
+
+export async function uploadBirdPhoto(file, options = {}) {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error("Database not configured");
+  }
+
+  if (!file) {
+    return null;
+  }
+
+  if (!file.type || !file.type.startsWith("image/")) {
+    throw new Error("Please upload an image file.");
+  }
+
+  const extension = file.name?.split(".").pop() || "jpg";
+  const safeExtension = extension.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const suffix = Math.random().toString(36).slice(2, 10);
+  const fileName = `${Date.now()}-${suffix}.${safeExtension || "jpg"}`;
+  const folder = options.folder || "jpp";
+  const filePath = `${folder}/${fileName}`;
+
+  const { error: uploadError } = await supabase.storage.from("birds").upload(filePath, file, {
+    cacheControl: "3600",
+    upsert: false,
+    contentType: file.type,
+  });
+
+  if (uploadError) {
+    console.error("Error uploading bird photo:", uploadError);
+    throw uploadError;
+  }
+
+  const { data: publicData } = supabase.storage.from("birds").getPublicUrl(filePath);
+
+  return {
+    path: filePath,
+    publicUrl: publicData?.publicUrl || null,
+  };
+}
+
+export async function createJppBird(payload) {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error("Database not configured");
+  }
+
+  const user = await getCurrentMember();
+
+  const insertPayload = {
+    product_id: payload.product_id,
+    batch_id: normalizeOptional(payload.batch_id),
+    tag_id: normalizeOptional(payload.tag_id),
+    bird_name: normalizeOptional(payload.bird_name),
+    sex: payload.sex || "unknown",
+    breed_label: normalizeOptional(payload.breed_label) || "unknown",
+    hatch_date: normalizeOptional(payload.hatch_date),
+    acquired_date: payload.acquired_date,
+    acquired_source: payload.acquired_source || "bought",
+    status: payload.status || "alive",
+    status_date: payload.status_date || payload.acquired_date,
+    photo_url: normalizeOptional(payload.photo_url),
+    notes: normalizeOptional(payload.notes),
+    description: normalizeOptional(payload.description),
+    color_label: normalizeOptional(payload.color_label),
+    pattern_label: normalizeOptional(payload.pattern_label),
+    age_stage: payload.age_stage || "unknown",
+    created_by: user?.auth_id || null,
+  };
+
+  const { data, error } = await supabase
+    .from("jpp_birds")
+    .insert(insertPayload)
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Error creating JPP bird:", error);
+    throw new Error("Failed to create bird");
+  }
+
+  return data;
 }
 
 export async function createProjectExpense(projectRef, payload) {
