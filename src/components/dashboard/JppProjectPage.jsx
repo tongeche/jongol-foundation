@@ -199,6 +199,7 @@ export default function JppProjectPage({ user }) {
   const [editingDailyId, setEditingDailyId] = useState(null);
   const [editingWeeklyId, setEditingWeeklyId] = useState(null);
   const [selectedBatchId, setSelectedBatchId] = useState("");
+  const [openBatchActionId, setOpenBatchActionId] = useState(null);
   const [selectedDailyDate, setSelectedDailyDate] = useState(null);
   const [printSheet, setPrintSheet] = useState("");
   const [selectedDownloadDoc, setSelectedDownloadDoc] = useState("");
@@ -1123,6 +1124,7 @@ export default function JppProjectPage({ user }) {
       notes: batch.notes ?? "",
     });
     setEditingBatchId(batch.id);
+    setOpenBatchActionId(null);
     setActiveTab("batches");
     resetMessages();
     openBatchFormMobile();
@@ -1180,6 +1182,7 @@ export default function JppProjectPage({ user }) {
     try {
       await deleteJppBatch(batchId);
       setStatusMessage("Batch deleted.");
+      setOpenBatchActionId(null);
       await loadJppData(false);
     } catch (error) {
       setErrorMessage(error.message || "Failed to delete batch.");
@@ -1218,6 +1221,7 @@ export default function JppProjectPage({ user }) {
     setBatchForm(initialBatchForm);
     setEditingBatchId(null);
     setShowBatchFormMobile(false);
+    setOpenBatchActionId(null);
   };
 
   const handleDailyCancel = () => {
@@ -2182,6 +2186,7 @@ export default function JppProjectPage({ user }) {
                       const displayName = batch.batch_name || batch.batch_code || "Batch";
                       const displayCode =
                         batch.batch_name && batch.batch_code ? batch.batch_code : "";
+                      const batchKey = String(batch.id || batch.batch_code || displayName);
                       const kpi = kpiLookup.get(
                         String(batch.batch_code || batch.batch_name || "")
                       );
@@ -2211,6 +2216,11 @@ export default function JppProjectPage({ user }) {
                                 type="button"
                                 className="jpp-batch-more-btn"
                                 aria-label="Batch options"
+                                onClick={() =>
+                                  setOpenBatchActionId((prev) =>
+                                    prev === batchKey ? null : batchKey
+                                  )
+                                }
                               >
                                 <Icon name="more-horizontal" size={18} />
                               </button>
@@ -2234,6 +2244,24 @@ export default function JppProjectPage({ user }) {
                               {formatCurrency(totalSpend)}
                             </span>
                           </div>
+                          {openBatchActionId === batchKey && (
+                            <div className="jpp-batch-card-actions">
+                              <button
+                                type="button"
+                                className="jpp-batch-card-action"
+                                onClick={() => handleBatchEdit(batch)}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                className="jpp-batch-card-action is-danger"
+                                onClick={() => handleBatchDelete(batch.id)}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          )}
                         </article>
                       );
                     })

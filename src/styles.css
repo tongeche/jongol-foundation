@@ -5661,6 +5661,32 @@ img {
   gap: 0.5rem;
 }
 
+.jpp-batch-card-actions {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.35rem;
+  border-radius: 14px;
+  border: 1px solid #e5e7eb;
+  background: #f8fafc;
+}
+
+.jpp-batch-card-action {
+  flex: 1;
+  border: none;
+  background: #fff;
+  color: #1f2937;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.4rem 0.6rem;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.jpp-batch-card-action.is-danger {
+  background: #fff1f2;
+  color: #b42323;
+}
+
 .jpp-batch-chip {
   display: inline-flex;
   align-items: center;
