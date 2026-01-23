@@ -3420,6 +3420,16 @@ img {
   color: #047857;
 }
 
+.transaction-icon--outflow {
+  background: linear-gradient(135deg, #fee2e2, #fecaca);
+  color: #b91c1c;
+}
+
+.transaction-icon--earning {
+  background: linear-gradient(135deg, #dcfce7, #bbf7d0);
+  color: #15803d;
+}
+
 .transaction-icon--welfare {
   background: linear-gradient(135deg, #ffe4e6, #fecdd3);
   color: #be123c;
@@ -3456,6 +3466,10 @@ img {
 
 .transaction-amount--positive {
   color: #047857;
+}
+
+.transaction-amount--negative {
+  color: #b91c1c;
 }
 
 .no-transactions {

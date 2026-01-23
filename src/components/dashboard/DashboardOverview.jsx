@@ -139,7 +139,7 @@ export default function DashboardOverview({ user }) {
   }, [payoutSchedule]);
 
   const displayTransactions = useMemo(() => {
-    if (transactionView === "split") {
+    if (transactionView === "contributions") {
       return contributionSplits.map((split) => ({
         id: split.id || `${split.contribution_id}-${split.split_type}`,
         title:
@@ -149,7 +149,22 @@ export default function DashboardOverview({ user }) {
         date: split.date,
         amount: split.amount,
         kind: split.split_type,
+        direction: "outflow",
       }));
+    }
+
+    if (transactionView === "earnings") {
+      return payoutSchedule
+        .filter((p) => p.member_id === user?.id)
+        .map((p) => ({
+          id: p.id,
+          title: `Payout received · Cycle ${p.cycle_number}`,
+          date: p.date,
+          amount: p.amount,
+          kind: "earning",
+          direction: "inflow",
+        }))
+        .slice(0, 5);
     }
 
     return recentContributions.map((c) => ({
@@ -158,8 +173,9 @@ export default function DashboardOverview({ user }) {
       date: c.date,
       amount: c.amount,
       kind: "summary",
+      direction: "outflow",
     }));
-  }, [transactionView, contributionSplits, recentContributions, payoutNameByCycle]);
+  }, [transactionView, contributionSplits, recentContributions, payoutNameByCycle, payoutSchedule, user?.id]);
 
   // Calculate days until next group payout
   const getDaysUntilNextPayout = () => {
@@ -257,10 +273,17 @@ export default function DashboardOverview({ user }) {
             </button>
             <button
               type="button"
-              className={`toggle-btn ${transactionView === "split" ? "is-active" : ""}`}
-              onClick={() => setTransactionView("split")}
+              className={`toggle-btn ${transactionView === "contributions" ? "is-active" : ""}`}
+              onClick={() => setTransactionView("contributions")}
             >
-              Split
+              Contributions
+            </button>
+            <button
+              type="button"
+              className={`toggle-btn ${transactionView === "earnings" ? "is-active" : ""}`}
+              onClick={() => setTransactionView("earnings")}
+            >
+              Earnings
             </button>
           </div>
           <div className="transactions-list">
@@ -273,16 +296,20 @@ export default function DashboardOverview({ user }) {
                         ? "transaction-icon--lending"
                         : transaction.kind === "welfare_savings"
                         ? "transaction-icon--welfare"
-                        : "transaction-icon--contribution"
+                        : transaction.kind === "earning"
+                        ? "transaction-icon--earning"
+                        : "transaction-icon--outflow"
                     }`}
                   >
                     <Icon
                       name={
                         transaction.kind === "lending_contribution"
                           ? "coins"
-                          : transaction.kind === "welfare_savings"
+                        : transaction.kind === "welfare_savings"
                           ? "heart"
-                          : "trending-up"
+                          : transaction.kind === "earning"
+                          ? "arrow-left"
+                          : "arrow-right"
                       }
                       size={18}
                     />
@@ -291,8 +318,15 @@ export default function DashboardOverview({ user }) {
                     <span className="transaction-title">{transaction.title}</span>
                     <span className="transaction-date">{formatDate(transaction.date)}</span>
                   </div>
-                  <div className="transaction-amount transaction-amount--positive">
-                    +Ksh. {formatCurrency(transaction.amount)}
+                  <div
+                    className={`transaction-amount ${
+                      transaction.direction === "inflow"
+                        ? "transaction-amount--positive"
+                        : "transaction-amount--negative"
+                    }`}
+                  >
+                    {transaction.direction === "inflow" ? "+" : "-"}Ksh.{" "}
+                    {formatCurrency(transaction.amount)}
                   </div>
                 </div>
               ))
